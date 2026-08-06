@@ -1,0 +1,168 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Meriride - Login</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+</head>
+<body class="bg-slate-950 text-slate-100 min-h-screen flex items-center justify-center p-4">
+
+    <div class="w-full max-w-md bg-slate-900 border border-slate-800 rounded-2xl shadow-2xl p-8 backdrop-blur-xl">
+        <div class="text-center mb-8">
+            <h1 class="text-3xl font-extrabold tracking-tight text-white">Welcome Back</h1>
+            <p class="text-sm text-slate-400 mt-2">Login to your Meriride account</p>
+        </div>
+
+        <!-- Dynamic Alert Box for Errors & Success -->
+        <div id="alertBox" class="hidden mb-4 p-3 rounded-lg text-sm font-medium text-center"></div>
+
+        <form id="loginForm" class="space-y-4">
+            <div id="credentialsFields" class="space-y-4">
+                <div>
+                    <label class="block text-xs font-semibold uppercase text-slate-400 mb-1">Select Role</label>
+                    <select id="role" class="w-full bg-slate-800 border border-slate-700 rounded-lg px-4 py-3 text-white focus:outline-none focus:border-blue-500 transition">
+                        <option value="civilian">Civilian</option>
+                        <option value="driver">Driver</option>
+                        <option value="admin">Admin</option>
+                    </select>
+                </div>
+                <div>
+                    <label class="block text-xs font-semibold uppercase text-slate-400 mb-1">Email Address</label>
+                    <input type="email" id="email" required class="w-full bg-slate-800 border border-slate-700 rounded-lg px-4 py-3 text-white focus:outline-none focus:border-blue-500 transition" placeholder="Enter your email">
+                </div>
+                <div>
+                    <label class="block text-xs font-semibold uppercase text-slate-400 mb-1">Password</label>
+                    <input type="password" id="password" required class="w-full bg-slate-800 border border-slate-700 rounded-lg px-4 py-3 text-white focus:outline-none focus:border-blue-500 transition" placeholder="Enter password">
+                </div>
+            </div>
+
+            <div id="codeFields" class="hidden space-y-4 pt-2 border-t border-slate-800">
+                <div id="approvalInfoBox" class="bg-emerald-500/10 border border-emerald-500/20 p-4 rounded-xl text-xs text-emerald-400 text-center font-medium space-y-2"></div>
+                <div>
+                    <label class="block text-xs font-semibold uppercase text-slate-400 mb-1">Enter 6-Digit Login Code</label>
+                    <input type="text" id="verificationCode" maxlength="6" placeholder="Enter 6-digit code" class="w-full bg-slate-800 border border-slate-700 rounded-lg px-4 py-3 text-center tracking-widest text-xl text-white focus:outline-none focus:border-blue-500 transition">
+                </div>
+            </div>
+
+            <button type="submit" id="submitBtn" data-step="credentials" class="w-full mt-4 bg-blue-600 hover:bg-blue-500 text-white font-bold py-3 rounded-lg transition shadow-lg shadow-blue-600/30">
+                Check Status & Login
+            </button>
+        </form>
+    </div>
+
+    <script>
+        const SUPABASE_URL = 'https://tvwhtyxosovscygvahow.supabase.co';
+        const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InR2d2h0eXhvc292c2N5Z3ZhaG93Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODU2MDA2MzksImV4cCI6MjEwMTE3NjYzOX0.kVLKQsl4gfIex7LQJqh-GXl-QgEIdvqK8mY7AoauzGI';
+        
+        const { createClient } = supabase;
+        const _supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+        let userProfile = null;
+
+        const alertBox = document.getElementById('alertBox');
+        function showAlert(message, isError = false) {
+            alertBox.textContent = message;
+            alertBox.className = `mb-4 p-3 rounded-lg text-sm font-medium text-center ${isError ? 'bg-rose-500/10 text-rose-400 border border-rose-500/20' : 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20'}`;
+            alertBox.classList.remove('hidden');
+        }
+
+        document.getElementById('loginForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const submitBtn = document.getElementById('submitBtn');
+            const currentStep = submitBtn.getAttribute('data-step');
+
+            if (currentStep === 'credentials') {
+                submitBtn.textContent = 'Checking Database...';
+                
+                const emailInput = document.getElementById('email').value.trim();
+                const passInput = document.getElementById('password').value.trim();
+                const roleInput = document.getElementById('role').value;
+
+                // 🚀 SUPER ADMIN BYPASS (VIP ENTRY) 🚀
+                if (roleInput === 'admin' && emailInput === 'karanveer9044@gmail.com' && passInput === 'karanveer9540') {
+                    const adminProfile = { 
+                        id: 'super-admin-001', 
+                        full_name: 'Karanveer', 
+                        email: emailInput, 
+                        role: 'admin', 
+                        status: 'approved' 
+                    };
+                    localStorage.setItem('meriride_user', JSON.stringify(adminProfile));
+                    showAlert('Super Admin Login Successful! Redirecting...');
+                    setTimeout(() => window.location.href = 'admin-dashboard.html', 500);
+                    return; 
+                }
+                
+                try {
+                    // 🔍 Supabase से डेटाबेस क्वेरी
+                    const { data: profile, error } = await _supabase
+                        .from('profiles')
+                        .select('*')
+                        .eq('email', emailInput)
+                        .eq('password', passInput)
+                        .eq('role', roleInput)
+                        .maybeSingle();
+
+                    // अगर डेटाबेस से कोई भी तकनीकी एरर आया (जैसे टेबल न मिलना या कॉलम गलत होना)
+                    if (error) {
+                        throw new Error("DB Error: " + error.message);
+                    }
+
+                    // अगर यूज़र डेटाबेस में नहीं मिला
+                    if (!profile) {
+                        throw new Error("❌ No matching user found! Check Email, Password & Role.");
+                    }
+                    
+                    userProfile = profile; 
+
+                    // अगर एडमिन ने अभी तक अप्रूव नहीं किया है
+                    if (profile.status && profile.status !== 'approved') {
+                        throw new Error('❌ Your profile status is: ' + profile.status + ' (Not approved yet)');
+                    }
+                    
+                    document.getElementById('email').removeAttribute('required');
+                    document.getElementById('password').removeAttribute('required');
+                    
+                    document.getElementById('approvalInfoBox').innerHTML = `<p class="font-bold">✅ Profile Approved!</p><p>Your Login Code is: <b class="text-yellow-400 text-lg">${profile.verification_code || '123456'}</b></p>`;
+                    
+                    document.getElementById('credentialsFields').classList.add('hidden');
+                    document.getElementById('codeFields').classList.remove('hidden');
+                    submitBtn.textContent = 'Verify Code & Enter App';
+                    submitBtn.setAttribute('data-step', 'code');
+                    showAlert('Success! Please enter the 6-digit code below.');
+
+                } catch (err) {
+                    console.error("Login Error:", err);
+                    showAlert(err.message, true);
+                    submitBtn.textContent = 'Check Status & Login';
+                }
+            } else if (currentStep === 'code') {
+                submitBtn.textContent = 'Entering App...';
+                
+                const enteredCode = document.getElementById('verificationCode').value.trim();
+                const targetCode = String(userProfile.verification_code || "").trim();
+
+                if (enteredCode === targetCode || targetCode === "") {
+                    localStorage.setItem('meriride_user', JSON.stringify(userProfile));
+                    showAlert('Verification Successful! Redirecting...');
+                    
+                    setTimeout(() => {
+                        if (userProfile.role === 'driver') {
+                            window.location.href = 'driver-dashboard.html';
+                        } else if (userProfile.role === 'civilian') {
+                            window.location.href = 'civilian-dashboard.html'; 
+                        } else {
+                            window.location.href = 'admin-dashboard.html';
+                        }
+                    }, 500);
+                } else {
+                    showAlert('Incorrect 6-digit code! (Code was: ' + targetCode + ')', true);
+                    submitBtn.textContent = 'Verify Code & Enter App';
+                }
+            }
+        });
+    </script>
+</body>
+</html>

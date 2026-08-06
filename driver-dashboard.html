@@ -1,0 +1,287 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Meriride - Driver Terminal</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <style>
+        .bg-grid { background-size: 40px 40px; background-image: linear-gradient(to right, rgba(255, 255, 255, 0.03) 1px, transparent 1px), linear-gradient(to bottom, rgba(255, 255, 255, 0.03) 1px, transparent 1px); }
+        .sos-pulse { animation: pulse-red 2s infinite; }
+        @keyframes pulse-red { 0% { box-shadow: 0 0 0 0 rgba(225, 29, 72, 0.7); } 70% { box-shadow: 0 0 0 15px rgba(225, 29, 72, 0); } 100% { box-shadow: 0 0 0 0 rgba(225, 29, 72, 0); } }
+    </style>
+</head>
+<body class="bg-[#050b14] text-slate-100 min-h-screen bg-grid relative overflow-x-hidden">
+
+    <nav class="bg-[#0a1120]/90 backdrop-blur-md border-b border-blue-900/30 px-4 md:px-6 py-4 flex justify-between items-center sticky top-0 z-50 shadow-lg">
+        <div class="flex items-center space-x-2">
+            <span class="text-xl font-black text-transparent bg-clip-text bg-gradient-to-r from-blue-400 to-cyan-300">MERIRIDE</span>
+            <span class="bg-amber-500/10 text-amber-400 border border-amber-500/30 px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-widest">Driver</span>
+        </div>
+        <div class="flex items-center space-x-4">
+            <a href="tel:112" class="sos-pulse bg-rose-600 hover:bg-rose-500 text-white border border-rose-400 px-4 py-1.5 rounded-lg text-xs font-black transition flex items-center shadow-lg">
+                <span class="mr-1">🚨</span> SOS
+            </a>
+            <button onclick="logout()" class="bg-slate-800 hover:bg-slate-700 text-slate-300 px-3 py-1.5 rounded-lg text-xs font-bold transition">Logout</button>
+        </div>
+    </nav>
+
+    <main class="max-w-4xl mx-auto p-4 mt-4 space-y-6 relative z-10">
+        
+        <header class="flex justify-between items-end border-b border-slate-800/50 pb-4">
+            <div>
+                <h1 class="text-3xl font-black text-white">Pilot: <span id="driverName" class="text-amber-400">Loading...</span></h1>
+                <p class="text-xs text-slate-400 font-mono mt-1">Standby for incoming ride requests.</p>
+            </div>
+        </header>
+
+        <!-- 🚀 ACTIVE RIDE PANEL -->
+        <div id="activeRidePanel" class="hidden bg-gradient-to-br from-[#0a1120] to-[#0f172a] border-2 border-emerald-500/50 rounded-2xl p-6 shadow-[0_0_30px_rgba(16,185,129,0.15)] relative overflow-hidden">
+            <div class="absolute top-0 right-0 bg-emerald-500 text-white text-[10px] font-black uppercase px-4 py-1 rounded-bl-xl tracking-widest">Active Mission</div>
+            
+            <h2 class="text-xl font-bold text-white mb-4">Current Ride Status</h2>
+            
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
+                <div class="bg-slate-900/80 p-4 rounded-xl border border-slate-700">
+                    <p class="text-xs text-slate-400 uppercase tracking-wider mb-1">Passenger Info</p>
+                    <p id="activePassengerName" class="font-bold text-2xl text-emerald-400">Name</p>
+                    <p id="activePassengerPhone" class="text-sm font-mono text-slate-300 mt-1">Phone</p>
+                </div>
+                <div class="bg-slate-900/80 p-4 rounded-xl border border-slate-700 flex flex-col justify-center gap-2">
+                    <button onclick="sendWhatsApp()" class="w-full bg-[#25D366]/20 hover:bg-[#25D366]/30 text-[#25D366] border border-[#25D366]/50 font-bold py-2 rounded-lg text-sm transition flex items-center justify-center">
+                        <span class="mr-2">💬</span> Message on WhatsApp
+                    </button>
+                    <button id="mapsBtn" onclick="openMaps()" class="w-full bg-blue-500/20 hover:bg-blue-500/30 text-blue-400 border border-blue-500/50 font-bold py-2 rounded-lg text-sm transition flex items-center justify-center">
+                        <span class="mr-2">📍</span> Open Google Maps
+                    </button>
+                </div>
+            </div>
+
+            <!-- LIVE STATUS BUTTONS -->
+            <div id="statusActions" class="flex flex-col gap-3">
+                <button id="btnArrived" onclick="updateRideStatus('arrived')" class="w-full bg-amber-600 hover:bg-amber-500 text-white font-black py-4 rounded-xl text-lg uppercase tracking-wider shadow-lg transition">
+                    I Have Arrived at Pickup
+                </button>
+                <button id="btnStarted" onclick="updateRideStatus('started')" class="hidden w-full bg-blue-600 hover:bg-blue-500 text-white font-black py-4 rounded-xl text-lg uppercase tracking-wider shadow-lg transition">
+                    Start Ride
+                </button>
+                <button id="btnCompleted" onclick="updateRideStatus('completed')" class="hidden w-full bg-emerald-600 hover:bg-emerald-500 text-white font-black py-4 rounded-xl text-lg uppercase tracking-wider shadow-lg transition">
+                    Ride Completed
+                </button>
+                <!-- 👇 CANCEL RIDE BUTTON -->
+                <button id="btnCancel" onclick="cancelRideByDriver()" class="w-full bg-rose-600 hover:bg-rose-500 text-white font-bold py-3 rounded-xl text-sm uppercase tracking-wider shadow-lg transition mt-2">
+                    🚫 Cancel / Reject Ride
+                </button>
+            </div>
+        </div>
+
+        <!-- NEW RIDE REQUESTS RADAR -->
+        <div id="requestsContainer">
+            <h2 class="text-lg font-bold text-slate-300 mb-4 flex items-center"><span class="mr-2">📡</span> Radar: Available Requests</h2>
+            <div id="rideList" class="space-y-4">
+                <p class="text-center text-slate-500 text-sm py-8 border border-dashed border-slate-800 rounded-xl bg-slate-900/30">Scanning for passengers...</p>
+            </div>
+        </div>
+
+    </main>
+
+    <script>
+        const SUPABASE_URL = 'https://tvwhtyxosovscygvahow.supabase.co';
+        const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InR2d2h0eXhvc292c2N5Z3ZhaG93Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODU2MDA2MzksImV4cCI6MjEwMTE3NjYzOX0.kVLKQsl4gfIex7LQJqh-GXl-QgEIdvqK8mY7AoauzGI';
+        const _supabase = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+        let driverProfile = null;
+        let currentActiveRide = null;
+
+        function checkAuth() {
+            const userData = localStorage.getItem('meriride_user');
+            if (!userData) { window.location.href = 'login.html'; return; }
+            driverProfile = JSON.parse(userData);
+            if (driverProfile.role !== 'driver') { window.location.href = 'login.html'; return; }
+            
+            document.getElementById('driverName').textContent = driverProfile.full_name;
+            checkActiveRide(); 
+        }
+
+        function logout() {
+            localStorage.removeItem('meriride_user');
+            window.location.href = 'login.html';
+        }
+
+        async function checkActiveRide() {
+            try {
+                const { data, error } = await _supabase.from('ride_requests')
+                    .select('*')
+                    .eq('driver_id', driverProfile.id)
+                    .in('status', ['accepted', 'arrived', 'started'])
+                    .maybeSingle();
+
+                if (data) {
+                    currentActiveRide = data;
+                    showActiveRidePanel();
+                } else {
+                    currentActiveRide = null;
+                    document.getElementById('activeRidePanel').classList.add('hidden');
+                    document.getElementById('requestsContainer').classList.remove('hidden');
+                    fetchPendingRequests(); 
+                }
+            } catch (err) { console.error(err); }
+        }
+
+        async function fetchPendingRequests() {
+            const { data: requests } = await _supabase.from('ride_requests')
+                .select('*')
+                .eq('status', 'pending');
+
+            const list = document.getElementById('rideList');
+            if (!requests || requests.length === 0) {
+                list.innerHTML = `<p class="text-center text-slate-500 text-sm py-8 border border-dashed border-slate-800 rounded-xl bg-slate-900/30">No rides available right now.</p>`;
+                return;
+            }
+
+            list.innerHTML = '';
+            requests.forEach(ride => {
+                const passName = ride.passenger_name || 'Unknown Civilian';
+                const passPhone = ride.passenger_phone || 'No Number';
+                const pickup = ride.pickup_location || 'Map Location';
+
+                list.innerHTML += `
+                    <div class="bg-slate-900/80 border border-slate-700 rounded-xl p-5 hover:border-cyan-500/50 transition shadow-lg relative overflow-hidden">
+                        <div class="absolute top-0 right-0 bg-blue-500/20 text-blue-400 px-3 py-1 rounded-bl-lg text-[10px] font-black uppercase">NEW ALERT</div>
+                        <div class="mb-4 mt-2">
+                            <p class="text-xs text-slate-400 uppercase tracking-widest mb-1">Passenger Profile</p>
+                            <p class="text-2xl font-black text-cyan-400">${passName}</p>
+                            <p class="text-sm text-slate-400 mt-2 flex items-center"><span class="mr-2">📍</span> ${pickup}</p>
+                        </div>
+                        <button onclick="acceptRide('${ride.id}')" class="w-full bg-emerald-600 hover:bg-emerald-500 text-white font-black py-4 rounded-xl text-lg uppercase tracking-wider shadow-[0_0_15px_rgba(16,185,129,0.3)] transition">
+                            ACCEPT RIDE
+                        </button>
+                    </div>
+                `;
+            });
+        }
+
+        async function acceptRide(rideId) {
+            try {
+                const { data, error } = await _supabase.from('ride_requests')
+                    .update({ status: 'accepted', driver_id: driverProfile.id })
+                    .eq('id', rideId)
+                    .select().single();
+
+                if (error) throw error;
+                currentActiveRide = data;
+                showActiveRidePanel();
+                
+            } catch (err) {
+                alert("Failed to accept ride. Someone else might have taken it.");
+                fetchPendingRequests();
+            }
+        }
+
+        function sendWhatsApp() {
+            if(!currentActiveRide) return;
+            let passPhone = currentActiveRide.passenger_phone || "";
+            if(passPhone) {
+                if(!passPhone.startsWith('+')) passPhone = '+91' + passPhone;
+                const message = `Hello! This is ${driverProfile.full_name}, your Meriride driver. I have accepted your ride and I am on my way! 🚖`;
+                const waLink = `https://wa.me/${passPhone.replace(/[^0-9+]/g, '')}?text=${encodeURIComponent(message)}`;
+                window.open(waLink, '_blank');
+            } else {
+                alert("Passenger phone number not found in database for this ride!");
+            }
+        }
+
+        function openMaps() {
+            if(!currentActiveRide) return;
+            let lat = currentActiveRide.status === 'started' ? currentActiveRide.drop_lat : currentActiveRide.pickup_lat;
+            let lng = currentActiveRide.status === 'started' ? currentActiveRide.drop_lng : currentActiveRide.pickup_lng;
+            if(!lat) { lat = '27.1303'; lng = '81.9565'; } 
+            const gmapsUrl = `https://www.google.com/maps/dir/?api=1&destination=${lat},${lng}&travelmode=driving`;
+            window.open(gmapsUrl, '_blank');
+        }
+
+        async function updateRideStatus(newStatus) {
+            try {
+                const { error } = await _supabase.from('ride_requests')
+                    .update({ status: newStatus })
+                    .eq('id', currentActiveRide.id);
+                
+                if (error) throw error;
+                currentActiveRide.status = newStatus;
+                
+                if(newStatus === 'completed') {
+                    alert("Ride Completed Successfully! Earnings added.");
+                    currentActiveRide = null;
+                    checkActiveRide(); 
+                } else {
+                    showActiveRidePanel(); 
+                }
+            } catch (err) {
+                alert("Error updating status!");
+            }
+        }
+
+        // 👇 यह है डिलीट करने वाला फंक्शन
+        async function cancelRideByDriver() {
+            if (!currentActiveRide) return;
+            
+            const confirmCancel = confirm("Are you sure you want to reject/cancel this ride? It will be removed from the system permanently.");
+            if (!confirmCancel) return;
+
+            try {
+                const { error } = await _supabase.from('ride_requests')
+                    .delete()
+                    .eq('id', currentActiveRide.id);
+
+                if (error) throw error;
+
+                alert("Ride rejected and deleted from the database!");
+                
+                // स्क्रीन रिसेट करो और वापस रडार पर जाओ
+                currentActiveRide = null;
+                checkActiveRide(); 
+            } catch (err) {
+                alert("Error cancelling ride: " + err.message);
+            }
+        }
+
+        function showActiveRidePanel() {
+            document.getElementById('requestsContainer').classList.add('hidden');
+            document.getElementById('activeRidePanel').classList.remove('hidden');
+
+            document.getElementById('activePassengerName').textContent = currentActiveRide.passenger_name || "Unknown Civilian";
+            document.getElementById('activePassengerPhone').textContent = currentActiveRide.passenger_phone || "No Phone Info";
+
+            const btnArrived = document.getElementById('btnArrived');
+            const btnStarted = document.getElementById('btnStarted');
+            const btnCompleted = document.getElementById('btnCompleted');
+            const mapsBtn = document.getElementById('mapsBtn');
+            const btnCancel = document.getElementById('btnCancel'); // Cancel Button
+
+            btnArrived.classList.add('hidden');
+            btnStarted.classList.add('hidden');
+            btnCompleted.classList.add('hidden');
+
+            if (currentActiveRide.status === 'accepted') {
+                btnArrived.classList.remove('hidden');
+                mapsBtn.innerHTML = '<span class="mr-2">📍</span> Navigate to Pickup';
+                btnCancel.classList.remove('hidden'); // Show cancel option
+            } else if (currentActiveRide.status === 'arrived') {
+                btnStarted.classList.remove('hidden');
+                btnCancel.classList.remove('hidden'); // Show cancel option
+            } else if (currentActiveRide.status === 'started') {
+                btnCompleted.classList.remove('hidden');
+                mapsBtn.innerHTML = '<span class="mr-2">🏁</span> Navigate to Drop-off';
+                btnCancel.classList.add('hidden'); // Hide cancel option when ride starts
+            }
+        }
+
+        checkAuth();
+        setInterval(() => {
+            if(!currentActiveRide) fetchPendingRequests();
+        }, 5000);
+
+    </script>
+</body>
+</html>

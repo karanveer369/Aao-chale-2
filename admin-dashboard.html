@@ -1,0 +1,139 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Meriride - Admin Dashboard</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+</head>
+<body class="bg-slate-950 text-slate-100 min-h-screen p-4 md:p-8">
+
+    <div class="max-w-7xl mx-auto">
+        <!-- Header Section -->
+        <div class="flex justify-between items-center bg-slate-900 border border-slate-800 rounded-2xl p-6 mb-8 shadow-xl">
+            <div>
+                <h1 class="text-2xl md:text-3xl font-extrabold text-white">Meriride Admin Panel</h1>
+                <p class="text-sm text-slate-400 mt-1">Manage Civilians and Drivers Separately</p>
+            </div>
+            <button onclick="handleLogout()" class="bg-rose-600/20 hover:bg-rose-600 text-rose-400 hover:text-white border border-rose-500/30 px-4 py-2 rounded-xl font-semibold transition">
+                Logout
+            </button>
+        </div>
+
+        <!-- Navigation Tabs -->
+        <div class="flex space-x-4 mb-6 border-b border-slate-800 pb-4">
+            <button onclick="switchTab('civilian')" id="civilianTabBtn" class="px-6 py-3 rounded-xl font-bold text-sm transition bg-blue-600 text-white shadow-lg shadow-blue-600/30">👥 Civilians</button>
+            <button onclick="switchTab('driver')" id="driverTabBtn" class="px-6 py-3 rounded-xl font-bold text-sm transition bg-slate-900 text-slate-400 border border-slate-800 hover:bg-slate-800 hover:text-white">🚗 Drivers</button>
+        </div>
+
+        <!-- Content Card -->
+        <div class="bg-slate-900 border border-slate-800 rounded-2xl overflow-hidden shadow-xl">
+            <div class="overflow-x-auto">
+                <table class="w-full text-left border-collapse">
+                    <thead>
+                        <tr id="tableHeader" class="bg-slate-800/50 text-slate-400 uppercase text-xs tracking-wider border-b border-slate-800"></tr>
+                    </thead>
+                    <tbody id="userTableBody" class="divide-y divide-slate-800 text-sm">
+                        <tr><td colspan="6" class="p-6 text-center">Loading data...</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const SUPABASE_URL = 'https://tvwhtyxosovscygvahow.supabase.co';
+        const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InR2d2h0eXhvc292c2N5Z3ZhaG93Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODU2MDA2MzksImV4cCI6MjEwMTE3NjYzOX0.kVLKQsl4gfIex7LQJqh-GXl-QgEIdvqK8mY7AoauzGI';
+        const { createClient } = supabase;
+        const _supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+        let activeTab = 'civilian';
+
+        // 🚀 FIX: Ab Admin ko LocalStorage se check karenge
+        function checkAdminAuth() {
+            const userData = localStorage.getItem('meriride_user');
+            if (!userData) { 
+                window.location.href = 'login.html'; 
+                return; 
+            }
+            
+            const profile = JSON.parse(userData);
+            if (profile.role !== 'admin') {
+                alert('Access Denied!');
+                window.location.href = 'login.html';
+                return;
+            }
+            
+            // Agar sab sahi hai, to users load karo
+            loadUsers();
+        }
+
+        function switchTab(tab) {
+            activeTab = tab;
+            document.getElementById('civilianTabBtn').className = tab === 'civilian' ? "px-6 py-3 rounded-xl font-bold text-sm bg-blue-600 text-white shadow-lg shadow-blue-600/30" : "px-6 py-3 rounded-xl font-bold text-sm bg-slate-900 text-slate-400 border border-slate-800 hover:bg-slate-800 hover:text-white";
+            document.getElementById('driverTabBtn').className = tab === 'driver' ? "px-6 py-3 rounded-xl font-bold text-sm bg-blue-600 text-white shadow-lg shadow-blue-600/30" : "px-6 py-3 rounded-xl font-bold text-sm bg-slate-900 text-slate-400 border border-slate-800 hover:bg-slate-800 hover:text-white";
+            loadUsers();
+        }
+
+        async function loadUsers() {
+            const tbody = document.getElementById('userTableBody');
+            const thead = document.getElementById('tableHeader');
+            
+            // Seedha profiles table se hi sab data padho
+            const { data, error } = await _supabase.from('profiles').select('*').eq('role', activeTab).order('created_at', { ascending: false });
+
+            if (error || !data || data.length === 0) {
+                tbody.innerHTML = `<tr><td colspan="6" class="p-6 text-center text-slate-500">No users found.</td></tr>`;
+                return;
+            }
+
+            let html = '';
+            if (activeTab === 'civilian') {
+                thead.innerHTML = `<th class="p-4">Name & Email</th><th class="p-4">Phone</th><th class="p-4">Status & Code</th><th class="p-4 text-center">Actions</th>`;
+                data.forEach(user => {
+                    let badge = user.status === 'approved' ? `<span class="bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 px-2 py-1 rounded text-xs font-bold">Approved (${user.verification_code || ''})</span>` : `<span class="bg-amber-500/10 text-amber-400 border border-amber-500/20 px-2 py-1 rounded text-xs font-bold">Pending</span>`;
+                    html += `<tr class="hover:bg-slate-800/30">
+                        <td class="p-4"><b>${user.full_name}</b><br><span class="text-xs text-slate-400">${user.email}</span></td>
+                        <td class="p-4">${user.phone}</td><td class="p-4">${badge}</td>
+                        <td class="p-4 text-center">
+                            <button onclick="updateStatus('${user.id}', 'approved')" class="bg-emerald-600 px-3 py-1 text-white rounded text-xs font-bold mr-2 hover:bg-emerald-500 transition">Approve</button>
+                        </td></tr>`;
+                });
+            } else {
+                thead.innerHTML = `<th class="p-4">Driver Name</th><th class="p-4">Phone</th><th class="p-4">Vehicle Details</th><th class="p-4">Lic/RC Number</th><th class="p-4">Status</th><th class="p-4 text-center">Actions</th>`;
+                data.forEach(user => {
+                    let badge = user.status === 'approved' ? `<span class="bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 px-2 py-1 rounded text-xs font-bold">Approved (${user.verification_code || ''})</span>` : `<span class="bg-amber-500/10 text-amber-400 border border-amber-500/20 px-2 py-1 rounded text-xs font-bold">Pending</span>`;
+                    html += `<tr class="hover:bg-slate-800/30">
+                        <td class="p-4"><b>${user.full_name}</b><br><span class="text-xs text-slate-400">${user.email}</span></td>
+                        <td class="p-4">${user.phone}</td>
+                        <td class="p-4"><span class="bg-blue-500/20 text-blue-400 px-2 py-0.5 rounded text-xs font-bold">${user.vehicle_type || 'N/A'}</span><br><span class="font-mono text-sm">${user.vehicle_number || 'N/A'}</span></td>
+                        <td class="p-4 text-xs text-slate-300">Lic: <span class="font-mono text-white">${user.license_number || 'N/A'}</span><br>RC: <span class="font-mono text-white">${user.rc_number || 'N/A'}</span></td>
+                        <td class="p-4">${badge}</td>
+                        <td class="p-4 text-center">
+                            <button onclick="updateStatus('${user.id}', 'approved')" class="bg-emerald-600 px-3 py-1 text-white rounded text-xs font-bold mr-2 hover:bg-emerald-500 transition">Approve</button>
+                        </td></tr>`;
+                });
+            }
+            tbody.innerHTML = html;
+        }
+
+        async function updateStatus(userId, status) {
+            let updateData = { status: status };
+            if (status === 'approved') updateData.verification_code = Math.floor(100000 + Math.random() * 900000).toString();
+            
+            await _supabase.from('profiles').update(updateData).eq('id', userId);
+            loadUsers();
+        }
+
+        // 🚀 FIX: Admin Logout
+        function handleLogout() { 
+            localStorage.removeItem('meriride_user'); 
+            window.location.href = 'login.html'; 
+        }
+
+        // Start checking auth as soon as page loads
+        checkAdminAuth();
+    </script>
+</body>
+</html>

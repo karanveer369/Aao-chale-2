@@ -1,0 +1,504 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Meriride - Driver Route Setup & Live Sync</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <!-- Leaflet Map CSS & JS -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    
+    <!-- 🔴 SUPABASE CDN FOR REAL-TIME SYNC -->
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    
+    <style>
+        .leaflet-container { font-family: inherit; z-index: 10; }
+        #searchSuggestions::-webkit-scrollbar { width: 6px; }
+        #searchSuggestions::-webkit-scrollbar-thumb { background-color: #475569; border-radius: 10px; }
+        
+        /* Glowing Center Pin Styling */
+        .map-center-pin {
+            position: absolute; top: 50%; left: 50%; transform: translate(-50%, -100%); z-index: 1000;
+            pointer-events: none; display: flex; flex-direction: column; align-items: center;
+            filter: drop-shadow(0 10px 8px rgba(0, 0, 0, 0.4));
+        }
+        .pin-head {
+            background: #ef4444; color: white; font-size: 26px; width: 48px; height: 48px; display: flex;
+            align-items: center; justify-content: center; border-radius: 50% 50% 50% 0; transform: rotate(-45deg);
+            box-shadow: 0 0 20px rgba(239, 68, 68, 0.8); border: 2px solid #fff;
+        }
+        .pin-head span { transform: rotate(45deg); }
+        .pin-shadow {
+            width: 12px; height: 5px; background: rgba(0, 0, 0, 0.5); border-radius: 50%;
+            margin-top: -2px; animation: pulse-shadow 1.5s infinite ease-in-out;
+        }
+        @keyframes pulse-shadow {
+            0% { transform: scale(1); opacity: 0.6; }
+            50% { transform: scale(0.6); opacity: 0.3; }
+            100% { transform: scale(1); opacity: 0.6; }
+        }
+    </style>
+</head>
+<body class="bg-slate-950 text-slate-100 min-h-screen pb-10">
+
+    <!-- Top Navbar -->
+    <nav class="bg-slate-900 border-b border-slate-800 px-6 py-4 flex justify-between items-center sticky top-0 z-40 shadow-lg">
+        <div class="flex items-center space-x-4">
+            <a href="driver-dashboard.html" class="text-slate-400 hover:text-white transition text-xl">←</a>
+            <span class="text-xl font-extrabold text-white">Universal Route Setup</span>
+        </div>
+        <div class="flex items-center space-x-3">
+            <span id="onlineStatusBadge" class="hidden bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 px-3 py-1 rounded-lg text-xs font-bold uppercase tracking-wider animate-pulse">
+                🟢 ONLINE
+            </span>
+            <span class="bg-blue-500/10 text-blue-400 border border-blue-500/20 px-3 py-1 rounded-lg text-xs font-bold uppercase tracking-wider" id="driverBadge">Driver</span>
+        </div>
+    </nav>
+
+    <main class="max-w-3xl mx-auto p-4 md:p-8 mt-4 relative z-10">
+        
+        <!-- 🔴 LIVE CIVILIAN REQUESTS AREA -->
+        <div id="civilianRequestsArea" class="hidden mb-6 bg-slate-900 border border-blue-500/40 rounded-2xl p-6 shadow-[0_0_20px_rgba(59,130,246,0.15)] transition-all">
+            <div class="flex items-center justify-between mb-4">
+                <h2 class="text-lg font-bold text-blue-400 flex items-center">📡 Civilian Ride Requests</h2>
+                <span class="relative flex h-3 w-3">
+                  <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-blue-400 opacity-75"></span>
+                  <span class="relative inline-flex rounded-full h-3 w-3 bg-blue-500"></span>
+                </span>
+            </div>
+            <div id="incomingRequestBox" class="space-y-3">
+                <p class="text-sm text-slate-400 italic">Listening for civilians nearby your route...</p>
+            </div>
+        </div>
+
+        <div class="mb-8">
+            <h1 class="text-2xl font-bold text-white">Universal Journey Planner 🌍</h1>
+            <p class="text-sm text-slate-400 mt-1">Search, pick, or pin routes. Publish to start receiving Civilian requests!</p>
+        </div>
+
+        <form id="routeForm" class="space-y-6">
+            
+            <!-- STEP 1: Starting Location -->
+            <div class="bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-xl relative overflow-hidden">
+                <div class="absolute top-0 left-0 w-1 h-full bg-emerald-500"></div>
+                <h2 class="text-lg font-bold text-white mb-4 flex items-center">📍 Starting Point (Origin)</h2>
+                
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                        <label class="block text-xs font-semibold uppercase text-slate-400 mb-1">Origin Name (Editable)</label>
+                        <input type="text" id="startLocationName" placeholder="e.g. Ragarganj" required class="w-full bg-slate-800 border border-slate-700 rounded-lg px-4 py-3 text-white focus:outline-none focus:border-blue-500 transition">
+                    </div>
+                    <div>
+                        <label class="block text-xs font-semibold uppercase text-slate-400 mb-1">GPS Coordinates</label>
+                        <div class="flex space-x-2">
+                            <input type="text" id="startCoords" placeholder="Map GPS" readonly required class="w-full bg-slate-800/50 border border-slate-700 rounded-lg px-4 py-3 text-slate-400 font-mono text-sm">
+                            <button type="button" onclick="openMapModal('startCoords', 'startLocationName')" class="bg-blue-600 hover:bg-blue-500 text-white px-4 rounded-lg font-bold transition flex items-center justify-center whitespace-nowrap shadow-lg shadow-blue-500/30">
+                                🗺️ Map Pin
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- STEP 2: Route Type Selection -->
+            <div class="bg-slate-900 border border-slate-800 rounded-2xl p-2 flex text-center font-semibold text-sm shadow-xl">
+                <button type="button" id="tabDirect" onclick="setRouteType('direct')" class="flex-1 py-3 rounded-xl bg-blue-600 text-white transition">🏁 Direct Point-to-Point</button>
+                <button type="button" id="tabCustom" onclick="setRouteType('custom')" class="flex-1 py-3 rounded-xl text-slate-400 hover:text-white transition">🛑 Multi-Stop Route (Via Stops)</button>
+            </div>
+            
+            <!-- OPTION A: Direct Destination -->
+            <div id="directRouteSection" class="bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-xl relative overflow-hidden">
+                <div class="absolute top-0 left-0 w-1 h-full bg-blue-500"></div>
+                <h2 class="text-lg font-bold text-white mb-4">🏁 Final Destination</h2>
+                
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    <div class="md:col-span-1">
+                        <label class="block text-xs font-semibold uppercase text-slate-400 mb-1">Drop Location (Editable)</label>
+                        <input type="text" id="destName" placeholder="e.g. Gonda" class="w-full bg-slate-800 border border-slate-700 rounded-lg px-4 py-3 text-white focus:outline-none focus:border-blue-500 transition">
+                    </div>
+                    <div class="md:col-span-1">
+                        <label class="block text-xs font-semibold uppercase text-slate-400 mb-1">Coordinates</label>
+                        <div class="flex space-x-2">
+                            <input type="text" id="destCoords" placeholder="Map GPS" readonly class="w-full bg-slate-800/50 border border-slate-700 rounded-lg px-3 py-3 text-slate-400 font-mono text-xs">
+                            <button type="button" onclick="openMapModal('destCoords', 'destName')" class="bg-blue-600 hover:bg-blue-500 text-white px-3 rounded-lg font-bold transition">🗺️</button>
+                        </div>
+                    </div>
+                    <div class="md:col-span-1">
+                        <label class="block text-xs font-semibold uppercase text-slate-400 mb-1">Total Fare (₹)</label>
+                        <input type="number" id="destPrice" placeholder="₹ 150" class="w-full bg-slate-800 border border-slate-700 rounded-lg px-4 py-3 text-emerald-400 font-bold focus:outline-none focus:border-emerald-500 transition">
+                    </div>
+                </div>
+            </div>
+
+            <!-- OPTION B: Universal Multi-Stop Waypoints -->
+            <div id="customRouteSection" class="hidden space-y-4">
+                <div class="bg-blue-500/10 border border-blue-500/20 p-4 rounded-xl text-xs text-blue-300">
+                    💡 <b>Tip:</b> Add local stops sequentially. You can also manually edit any place name if needed!
+                </div>
+                <div id="stopsContainer" class="space-y-4"></div>
+                <button type="button" onclick="addStop()" class="w-full py-4 border-2 border-dashed border-slate-700 rounded-2xl text-slate-400 hover:text-white hover:border-slate-500 hover:bg-slate-800/50 transition font-bold flex items-center justify-center">
+                    <span class="text-xl mr-2">+</span> Add Intermediate Stop & Fare
+                </button>
+            </div>
+
+            <button type="submit" id="publishBtn" class="w-full mt-8 bg-emerald-600 hover:bg-emerald-500 text-white font-extrabold py-4 rounded-xl transition shadow-lg shadow-emerald-600/30 text-lg">
+                🚀 Publish Route & Go LIVE
+            </button>
+        </form>
+    </main>
+
+    <!-- LIVE MAP MODAL -->
+    <div id="mapModal" class="fixed inset-0 z-50 bg-slate-950/90 backdrop-blur-sm hidden flex-col items-center justify-center p-2 md:p-4">
+        <div class="w-full max-w-4xl bg-slate-900 border border-slate-700 rounded-2xl shadow-2xl overflow-hidden flex flex-col h-[90vh]">
+            <div class="bg-slate-800 px-4 py-4 border-b border-slate-700">
+                <div class="flex justify-between items-center mb-3">
+                    <h2 class="text-lg font-bold text-white flex items-center">🔍 Search or Drop Pin on Map</h2>
+                    <button onclick="closeMap()" class="text-slate-400 hover:text-rose-400 transition text-2xl font-bold">✖</button>
+                </div>
+                <div class="relative z-50 flex space-x-2">
+                    <div class="relative flex-1">
+                        <input type="text" id="mapSearchBox" placeholder="Type location name (e.g. Ragarganj)..." class="w-full bg-slate-950 border border-blue-500/50 rounded-lg pl-10 pr-4 py-3 text-white focus:outline-none focus:border-blue-400 transition shadow-inner placeholder-slate-500">
+                        <span class="absolute left-3 top-3.5 text-slate-400">📍</span>
+                        <ul id="searchSuggestions" class="absolute left-0 right-0 mt-1 bg-slate-800 border border-slate-600 rounded-lg shadow-2xl hidden max-h-56 overflow-y-auto divide-y divide-slate-700"></ul>
+                    </div>
+                    <button onclick="locateMeOnMap()" class="bg-blue-600 hover:bg-blue-500 text-white px-4 rounded-lg font-bold transition flex items-center justify-center whitespace-nowrap shadow-lg shadow-blue-500/30 flex-shrink-0" title="Current GPS">
+                        🎯 Locate Me
+                    </button>
+                </div>
+            </div>
+            <div id="liveMap" class="w-full flex-1 relative bg-slate-800">
+                <div class="map-center-pin">
+                    <div class="pin-head"><span>📍</span></div>
+                    <div class="pin-shadow"></div>
+                </div>
+            </div>
+            <div class="p-4 md:p-6 bg-slate-900 border-t border-slate-700 shadow-[0_-10px_15px_-3px_rgba(0,0,0,0.3)]">
+                <div class="flex items-center justify-between mb-4">
+                    <span class="text-xs font-bold text-slate-400 uppercase tracking-widest hidden md:inline">Exact Pin Coordinates:</span>
+                    <span id="liveCoordsDisplay" class="font-mono text-emerald-400 font-bold bg-emerald-500/10 border border-emerald-500/20 px-3 py-1.5 rounded-lg shadow-inner w-full md:w-auto text-center">Searching...</span>
+                </div>
+                <button onclick="confirmMapLocation()" class="w-full bg-emerald-600 hover:bg-emerald-500 text-white font-extrabold py-3.5 rounded-xl transition shadow-lg shadow-emerald-600/30 text-lg uppercase tracking-wide">
+                    ✅ Lock Exact Location
+                </button>
+            </div>
+        </div>
+    </div>
+    <script>
+        const SUPABASE_URL = 'https://tvwhtyxosovscygvahow.supabase.co';
+        const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InR2d2h0eXhvc292c2N5Z3ZhaG93Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODU2MDA2MzksImV4cCI6MjEwMTE3NjYzOX0.kVLKQsl4gfIex7LQJqh-GXl-QgEIdvqK8mY7AoauzGI';
+        
+        const supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+        let currentDriverId = "DRV_" + Math.floor(Math.random() * 10000); 
+
+        let currentRouteType = 'direct';
+        let stopCount = 0;
+        let mapInstance = null;
+        let activeTargetInput = null;
+        let sourceNameInput = null;
+        let selectedSearchPlaceName = ""; 
+
+        function checkAuth() {
+            try {
+                const userData = localStorage.getItem('meriride_user');
+                if (userData) document.getElementById('driverBadge').textContent = JSON.parse(userData).full_name.split(' ')[0];
+            } catch(e) {}
+        }
+
+        function setRouteType(type) {
+            currentRouteType = type;
+            document.getElementById('tabDirect').className = type === 'direct' ? "flex-1 py-3 rounded-xl bg-blue-600 text-white transition" : "flex-1 py-3 rounded-xl text-slate-400 hover:text-white transition";
+            document.getElementById('tabCustom').className = type === 'custom' ? "flex-1 py-3 rounded-xl bg-blue-600 text-white transition" : "flex-1 py-3 rounded-xl text-slate-400 hover:text-white transition";
+            
+            document.getElementById('directRouteSection').classList.toggle('hidden', type !== 'direct');
+            document.getElementById('customRouteSection').classList.toggle('hidden', type !== 'custom');
+            if(type === 'custom' && stopCount === 0) addStop();
+        }
+
+        function addStop() {
+            stopCount++;
+            const html = `
+                <div class="stop-row bg-slate-900 border border-slate-800 rounded-2xl p-5 shadow-lg relative" id="stopRow_${stopCount}">
+                    <div class="absolute top-0 left-0 w-1 h-full bg-purple-500 rounded-l-2xl"></div>
+                    <div class="flex justify-between items-center mb-3">
+                        <h3 class="text-sm font-bold text-purple-400 uppercase tracking-wide">Stop Waypoint</h3>
+                        <button type="button" onclick="document.getElementById('stopRow_${stopCount}').remove()" class="text-xs text-rose-400 hover:text-rose-300 font-bold bg-rose-500/10 px-2 py-1 rounded">Remove ✖</button>
+                    </div>
+                    <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                        <div class="md:col-span-1">
+                            <input type="text" id="stopLoc_${stopCount}" placeholder="e.g. Vijay Nagar" required class="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2.5 text-white focus:outline-none focus:border-purple-500 text-sm">
+                        </div>
+                        <div class="md:col-span-1 flex space-x-2">
+                            <input type="text" id="stopCoords_${stopCount}" placeholder="Map GPS" readonly required class="w-full bg-slate-800/50 border border-slate-700 rounded-lg px-3 py-2.5 text-slate-400 font-mono text-xs">
+                            <button type="button" onclick="openMapModal('stopCoords_${stopCount}', 'stopLoc_${stopCount}')" class="bg-blue-600 hover:bg-blue-500 text-white px-3 rounded-lg font-bold transition">🗺️</button>
+                        </div>
+                        <div class="md:col-span-1">
+                            <input type="number" placeholder="Fare up to here (₹)" required class="fare-input w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2.5 text-emerald-400 font-bold focus:outline-none focus:border-emerald-500 text-sm">
+                        </div>
+                    </div>
+                </div>`;
+            document.getElementById('stopsContainer').insertAdjacentHTML('beforeend', html);
+        }
+
+        function openMapModal(targetInputId, sourceInputId) {
+            activeTargetInput = targetInputId;
+            sourceNameInput = sourceInputId;
+            selectedSearchPlaceName = ""; 
+            
+            document.getElementById('mapSearchBox').value = '';
+            document.getElementById('searchSuggestions').classList.add('hidden');
+            
+            document.getElementById('mapModal').classList.remove('hidden');
+            document.body.style.overflow = 'hidden';
+
+            let lat = 27.1303; let lng = 81.9673; 
+
+            setTimeout(() => {
+                if (!mapInstance) {
+                    mapInstance = L.map('liveMap', { zoomControl: false }).setView([lat, lng], 13);
+                    L.tileLayer('https://mt1.google.com/vt/lyrs=m&x={x}&y={y}&z={z}',{ maxZoom: 20, attribution: 'Google Maps' }).addTo(mapInstance);
+                    mapInstance.on('move', function () {
+                        const center = mapInstance.getCenter();
+                        document.getElementById('liveCoordsDisplay').textContent = `${center.lat.toFixed(6)}, ${center.lng.toFixed(6)}`;
+                    });
+                }
+                locateMeOnMap();
+                mapInstance.invalidateSize();
+            }, 300);
+        }
+
+        function locateMeOnMap() {
+            document.getElementById('liveCoordsDisplay').textContent = "Fetching Live GPS...";
+            if (navigator.geolocation) {
+                navigator.geolocation.getCurrentPosition(
+                    (position) => {
+                        const lat = position.coords.latitude; const lng = position.coords.longitude;
+                        mapInstance.flyTo([lat, lng], 16, { duration: 1.5 });
+                        document.getElementById('liveCoordsDisplay').textContent = `${lat.toFixed(6)}, ${lng.toFixed(6)}`;
+                    },
+                    (error) => { document.getElementById('liveCoordsDisplay').textContent = "Drag map manually to pin location."; },
+                    { enableHighAccuracy: true }
+                );
+            } else {
+                document.getElementById('liveCoordsDisplay').textContent = "Drag map manually.";
+            }
+        }
+
+        function closeMap() {
+            document.getElementById('mapModal').classList.add('hidden');
+            document.body.style.overflow = '';
+            document.getElementById('searchSuggestions').classList.add('hidden');
+        }
+
+        async function confirmMapLocation() {
+            const center = mapInstance.getCenter();
+            const lat = center.lat; const lng = center.lng;
+
+            document.getElementById(activeTargetInput).value = `${lat.toFixed(6)}, ${lng.toFixed(6)}`;
+            const nameInput = document.getElementById(sourceNameInput);
+
+            if (selectedSearchPlaceName) {
+                nameInput.value = selectedSearchPlaceName;
+            } 
+            else if (!nameInput.value || nameInput.value.trim() === "") {
+                nameInput.value = "⏳ Fetching area name...";
+                try {
+                    const res = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}&zoom=18&addressdetails=1`);
+                    const data = await res.json();
+                    
+                    if (data && data.address) {
+                        const addr = data.address;
+                        let smartName = addr.village || addr.hamlet || addr.suburb || addr.neighbourhood || addr.town || addr.city;
+                        
+                        if (smartName) {
+                            nameInput.value = smartName;
+                        } else if (data.name && !data.name.includes("MDR") && !data.name.includes("NH")) {
+                            nameInput.value = data.name;
+                        } else {
+                            nameInput.value = ""; 
+                        }
+                    } else {
+                        nameInput.value = ""; 
+                    }
+                } catch (e) {
+                    nameInput.value = "";
+                }
+            }
+
+            closeMap();
+
+            setTimeout(() => { 
+                if(!nameInput.value) nameInput.placeholder = "Please type place name manually";
+                nameInput.focus(); 
+            }, 300);
+        }
+
+        let searchTimeout;
+        const searchBox = document.getElementById('mapSearchBox');
+        const suggBox = document.getElementById('searchSuggestions');
+
+        searchBox.addEventListener('input', (e) => {
+            clearTimeout(searchTimeout);
+            const query = e.target.value.trim();
+            selectedSearchPlaceName = query; 
+            
+            if(query.length < 2) { suggBox.classList.add('hidden'); return; }
+            searchTimeout = setTimeout(() => triggerSearch(query), 300);
+        });
+
+        async function triggerSearch(query) {
+            suggBox.innerHTML = '<li class="px-5 py-3 text-sm text-slate-400">⏳ Searching...</li>';
+            suggBox.classList.remove('hidden');
+
+            try {
+                const res = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(query)}&countrycodes=in&addressdetails=1&limit=6`);
+                const data = await res.json();
+                suggBox.innerHTML = '';
+                
+                if(data && data.length > 0) {
+                    data.forEach((item) => {
+                        const li = document.createElement('li');
+                        li.className = 'px-5 py-3 hover:bg-blue-600 cursor-pointer text-sm text-slate-200 transition group flex items-start';
+                        const fullName = item.display_name;
+                        const shortName = item.address.village || item.address.suburb || item.address.town || fullName.split(',')[0];
+
+                        li.innerHTML = `<span class="mr-3 text-lg opacity-50 group-hover:opacity-100 group-hover:text-white">📍</span> 
+                                        <div><span class="font-bold text-white block">${shortName}</span>
+                                        <span class="text-xs text-slate-400 group-hover:text-blue-200">${fullName}</span></div>`;
+                        
+                        li.onclick = () => {
+                            mapInstance.flyTo([parseFloat(item.lat), parseFloat(item.lon)], 16, { duration: 1.5 });
+                            searchBox.value = shortName;
+                            selectedSearchPlaceName = shortName; 
+                            suggBox.classList.add('hidden');
+                        };
+                        suggBox.appendChild(li);
+                    });
+                } else {
+                    suggBox.innerHTML = '<li class="px-5 py-4 text-sm text-rose-400">No match found. Drag map manually.</li>';
+                }
+            } catch(err) {
+                suggBox.innerHTML = '<li class="px-5 py-4 text-sm text-rose-400">Network error.</li>';
+            }
+        }
+
+        // ==========================================
+        // 🔴 PUBLISH TO CORRECT TABLE (`driver_live_routes`)
+        // ==========================================
+        document.getElementById('routeForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            
+            const startCoordsStr = document.getElementById('startCoords').value;
+            if(!startCoordsStr) return alert("Please map the Starting Location GPS first!");
+
+            const startC = startCoordsStr.split(',');
+            let dropC = [0, 0];
+            let fare = 0;
+            
+            let fullRoutePath = []; 
+            fullRoutePath.push([parseFloat(startC[0]), parseFloat(startC[1])]);
+
+            if(currentRouteType === 'direct') {
+                const destCoords = document.getElementById('destCoords').value;
+                if(!destCoords) return alert("Please map Destination GPS.");
+                dropC = destCoords.split(',');
+                fare = document.getElementById('destPrice').value;
+                
+                fullRoutePath.push([parseFloat(dropC[0]), parseFloat(dropC[1])]);
+            } else {
+                const activeStops = document.querySelectorAll('.stop-row');
+                if(activeStops.length === 0) return alert("Please add at least one stop.");
+                
+                activeStops.forEach(stop => {
+                    const stopCoordsInput = stop.querySelector('input[id^="stopCoords_"]');
+                    if(stopCoordsInput && stopCoordsInput.value) {
+                        let c = stopCoordsInput.value.split(',');
+                        fullRoutePath.push([parseFloat(c[0]), parseFloat(c[1])]);
+                    }
+                });
+
+                const lastStop = activeStops[activeStops.length - 1];
+                const lastStopCoordsInput = lastStop.querySelector('input[id^="stopCoords_"]');
+                const lastFareInput = lastStop.querySelector('.fare-input');
+
+                if(!lastStopCoordsInput || !lastStopCoordsInput.value) return alert("Please map the final stop GPS.");
+                
+                dropC = lastStopCoordsInput.value.split(',');
+                fare = lastFareInput.value;
+            }
+
+            const btn = document.getElementById('publishBtn');
+            btn.innerHTML = "⏳ Publishing to Satellite...";
+            btn.classList.replace("bg-emerald-600", "bg-slate-600");
+
+            const routeData = {
+                id: currentDriverId,
+                driver_name: document.getElementById('driverBadge').textContent || "Driver",
+                vehicle_no: "UP 43 XX 1234",
+                start_lat: parseFloat(startC[0]),
+                start_lng: parseFloat(startC[1]),
+                drop_lat: parseFloat(dropC[0]),
+                drop_lng: parseFloat(dropC[1]),
+                fare: parseFloat(fare),
+                route_path: JSON.stringify(fullRoutePath),
+                status: 'online'
+            };
+
+            // 🔴 CORRECTION: Using your exact table name from Supabase (`driver_live_routes`)
+            const { error } = await supabaseClient.from('driver_live_routes').upsert(routeData);
+
+            if(error) {
+                alert("Database Error: " + error.message);
+                btn.innerHTML = "🚀 Publish Route & Go LIVE";
+                btn.classList.replace("bg-slate-600", "bg-emerald-600");
+                return;
+            }
+
+            btn.innerHTML = "🟢 ROUTE LIVE - WAITING FOR PASSENGERS";
+            btn.disabled = true;
+            document.getElementById('onlineStatusBadge').classList.remove('hidden');
+            document.getElementById('civilianRequestsArea').classList.remove('hidden');
+            
+            listenForCivilianRequests();
+        });
+
+        function listenForCivilianRequests() {
+            supabaseClient
+                .channel('public:ride_requests')
+                .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'ride_requests', filter: `driver_id=eq.${currentDriverId}` }, payload => {
+                    const req = payload.new;
+                    showIncomingPopup(req);
+                })
+                .subscribe();
+        }
+
+        function showIncomingPopup(req) {
+            const reqBox = document.getElementById('incomingRequestBox');
+            reqBox.innerHTML = `
+                <div class="bg-slate-800 border border-blue-500 rounded-xl p-4 shadow-lg shadow-blue-500/20 transform transition hover:scale-[1.02]">
+                    <div class="flex justify-between items-start mb-2">
+                        <p class="text-base font-bold text-white">👤 Civilian: ${req.passenger_name}</p>
+                        <span class="bg-rose-500 text-white text-[10px] font-bold px-2 py-1 rounded uppercase animate-pulse">New Ride</span>
+                    </div>
+                    <p class="text-xs text-slate-300 font-mono mb-4">📍 Pickup Coordinates:<br> ${req.pickup_lat}, ${req.pickup_lng}</p>
+                    
+                    <button onclick="acceptRide('${req.id}', ${req.pickup_lat}, ${req.pickup_lng})" class="w-full bg-emerald-600 hover:bg-emerald-500 text-white font-bold py-3 rounded-lg text-sm shadow-lg">
+                        ✅ ACCEPT RIDE & NAVIGATE
+                    </button>
+                </div>
+            `;
+        }
+
+        async function acceptRide(reqId, passLat, passLng) {
+            await supabaseClient.from('ride_requests').update({ status: 'accepted' }).eq('id', reqId);
+            document.getElementById('incomingRequestBox').innerHTML = `<p class="text-emerald-400 font-bold">✅ Ride Accepted! Navigation started on Google Maps.</p>`;
+
+            const gmapsUrl = `https://www.google.com/maps/dir/?api=1&destination=${passLat},${passLng}&travelmode=driving`;
+            window.open(gmapsUrl, '_blank');
+        }
+
+        checkAuth();
+    </script>
+</body>
+</html>

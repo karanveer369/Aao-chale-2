@@ -1,0 +1,183 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Meriride - Signup</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+</head>
+<body class="bg-slate-950 text-slate-100 min-h-screen flex items-center justify-center p-4">
+
+    <div class="w-full max-w-lg bg-slate-900 border border-slate-800 rounded-2xl shadow-2xl p-8 backdrop-blur-xl my-8">
+        <div class="text-center mb-8">
+            <h1 class="text-3xl font-extrabold tracking-tight text-white">Create Account</h1>
+            <p class="text-sm text-slate-400 mt-2">Join Meriride as a Civilian or Driver</p>
+        </div>
+
+        <div id="alertBox" class="hidden mb-4 p-3 rounded-lg text-sm font-medium text-center"></div>
+
+        <form id="signupForm" class="space-y-4">
+            <div>
+                <label class="block text-xs font-semibold uppercase text-slate-400 mb-1">Full Name</label>
+                <input type="text" id="fullName" required class="w-full bg-slate-800 border border-slate-700 rounded-lg px-4 py-3 text-white focus:outline-none focus:border-blue-500 transition">
+            </div>
+
+            <div>
+                <label class="block text-xs font-semibold uppercase text-slate-400 mb-1">Email Address</label>
+                <input type="email" id="email" required class="w-full bg-slate-800 border border-slate-700 rounded-lg px-4 py-3 text-white focus:outline-none focus:border-blue-500 transition">
+            </div>
+
+            <div>
+                <label class="block text-xs font-semibold uppercase text-slate-400 mb-1">Password</label>
+                <input type="password" id="password" required class="w-full bg-slate-800 border border-slate-700 rounded-lg px-4 py-3 text-white focus:outline-none focus:border-blue-500 transition">
+            </div>
+
+            <div>
+                <label class="block text-xs font-semibold uppercase text-slate-400 mb-1">Phone Number</label>
+                <input type="tel" id="phone" required class="w-full bg-slate-800 border border-slate-700 rounded-lg px-4 py-3 text-white focus:outline-none focus:border-blue-500 transition">
+            </div>
+
+            <div>
+                <label class="block text-xs font-semibold uppercase text-slate-400 mb-1">Select Role</label>
+                <select id="role" onchange="toggleDriverFields()" class="w-full bg-slate-800 border border-slate-700 rounded-lg px-4 py-3 text-white focus:outline-none focus:border-blue-500 transition">
+                    <option value="civilian">Civilian</option>
+                    <option value="driver">Driver</option>
+                </select>
+            </div>
+
+            <!-- Driver Specific Fields -->
+            <div id="driverFields" class="hidden space-y-4 pt-4 border-t border-slate-800">
+                <h3 class="text-sm font-bold text-blue-400 uppercase tracking-wider">Driver & Vehicle Details</h3>
+                
+                <div>
+                    <label class="block text-xs font-semibold uppercase text-slate-400 mb-1">License Number</label>
+                    <input type="text" id="licenseNumber" class="w-full bg-slate-800 border border-slate-700 rounded-lg px-4 py-3 text-white focus:outline-none focus:border-blue-500 transition">
+                </div>
+
+                <div>
+                    <label class="block text-xs font-semibold uppercase text-slate-400 mb-1">Vehicle Type</label>
+                    <select id="vehicleType" class="w-full bg-slate-800 border border-slate-700 rounded-lg px-4 py-3 text-white focus:outline-none focus:border-blue-500 transition">
+                        <option value="Bike">Bike</option>
+                        <option value="Auto">Auto</option>
+                        <option value="Car">Car</option>
+                    </select>
+                </div>
+
+                <div>
+                    <label class="block text-xs font-semibold uppercase text-slate-400 mb-1">Vehicle Number</label>
+                    <input type="text" id="vehicleNumber" placeholder="e.g. UP47AB1234" class="w-full bg-slate-800 border border-slate-700 rounded-lg px-4 py-3 text-white focus:outline-none focus:border-blue-500 transition">
+                </div>
+
+                <div>
+                    <label class="block text-xs font-semibold uppercase text-slate-400 mb-1">RC Number</label>
+                    <input type="text" id="rcNumber" class="w-full bg-slate-800 border border-slate-700 rounded-lg px-4 py-3 text-white focus:outline-none focus:border-blue-500 transition">
+                </div>
+            </div>
+
+            <button type="submit" id="submitBtn" class="w-full mt-6 bg-blue-600 hover:bg-blue-500 text-white font-bold py-3 rounded-lg transition shadow-lg shadow-blue-600/30">
+                Sign Up
+            </button>
+        </form>
+
+        <!-- Professional Login Link Added Here -->
+        <div class="mt-6 pt-6 border-t border-slate-800 text-center">
+            <p class="text-sm text-slate-400">
+                Already have an account? 
+                <a href="login.html" class="text-blue-400 font-semibold hover:text-blue-300 hover:underline transition duration-200">
+                    Login here
+                </a>
+            </p>
+        </div>
+    </div>
+
+    <script>
+        const SUPABASE_URL = 'https://tvwhtyxosovscygvahow.supabase.co';
+        const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InR2d2h0eXhvc292c2N5Z3ZhaG93Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODU2MDA2MzksImV4cCI6MjEwMTE3NjYzOX0.kVLKQsl4gfIex7LQJqh-GXl-QgEIdvqK8mY7AoauzGI';
+        
+        const { createClient } = supabase;
+        const _supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+        function toggleDriverFields() {
+            const role = document.getElementById('role').value;
+            const driverFields = document.getElementById('driverFields');
+            if (role === 'driver') {
+                driverFields.classList.remove('hidden');
+            } else {
+                driverFields.classList.add('hidden');
+            }
+        }
+
+        const alertBox = document.getElementById('alertBox');
+        function showAlert(message, isError = false) {
+            alertBox.textContent = message;
+            alertBox.classList.remove('hidden', 'bg-emerald-500/10', 'text-emerald-400', 'border-emerald-500/20', 'bg-rose-500/10', 'text-rose-400', 'border-rose-500/20');
+            if (isError) {
+                alertBox.classList.add('bg-rose-500/10', 'text-rose-400', 'border', 'border-rose-500/20');
+            } else {
+                alertBox.classList.add('bg-emerald-500/10', 'text-emerald-400', 'border', 'border-emerald-500/20');
+            }
+        }
+
+        document.getElementById('signupForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const submitBtn = document.getElementById('submitBtn');
+            submitBtn.textContent = 'Processing...';
+            submitBtn.disabled = true;
+
+            const fullName = document.getElementById('fullName').value.trim();
+            const email = document.getElementById('email').value.trim();
+            const password = document.getElementById('password').value.trim();
+            const phone = document.getElementById('phone').value.trim();
+            const role = document.getElementById('role').value;
+
+            try {
+                // 1. Setup Supabase Auth
+                const { data: authData, error: authError } = await _supabase.auth.signUp({
+                    email,
+                    password,
+                    options: { data: { full_name: fullName, role: role } }
+                });
+
+                if (authError) throw new Error(authError.message);
+
+                const userId = authData.user?.id;
+                if (userId) {
+                    
+                    // 2. Data banayein - agar driver hai toh driver details add kardo isi mein
+                    let profileData = { 
+                        id: userId,
+                        full_name: fullName,
+                        email: email,
+                        password: password,
+                        phone: phone, 
+                        role: role,
+                        status: 'pending' 
+                    };
+
+                    if (role === 'driver') {
+                        profileData.license_number = document.getElementById('licenseNumber').value.trim();
+                        profileData.vehicle_type = document.getElementById('vehicleType').value;
+                        profileData.vehicle_number = document.getElementById('vehicleNumber').value.trim();
+                        profileData.rc_number = document.getElementById('rcNumber').value.trim();
+                    }
+
+                    // 3. Ek hi baar mein poori table mein save karein
+                    const { error: profileError } = await _supabase.from('profiles').upsert(profileData);
+
+                    if (profileError) throw new Error("Database Save Error: " + profileError.message);
+
+                    showAlert('Signup Successful! Your account is under admin review.');
+                    document.getElementById('signupForm').reset();
+                    toggleDriverFields();
+                }
+            } catch (err) {
+                showAlert(err.message, true);
+            } finally {
+                submitBtn.textContent = 'Sign Up';
+                submitBtn.disabled = false;
+            }
+        });
+    </script>
+</body>
+</html>

@@ -1,0 +1,611 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Meriride - Civilian Smart Ride Booking</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <!-- Leaflet Map CSS & JS -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    
+    <!-- SUPABASE -->
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    
+    <style>
+        .leaflet-container { font-family: inherit; z-index: 10; }
+        #searchSuggestions::-webkit-scrollbar { width: 6px; }
+        #searchSuggestions::-webkit-scrollbar-thumb { background-color: #475569; border-radius: 10px; }
+        
+        .map-center-pin {
+            position: absolute; top: 50%; left: 50%; transform: translate(-50%, -100%); z-index: 1000;
+            pointer-events: none; display: flex; flex-direction: column; align-items: center;
+            filter: drop-shadow(0 10px 8px rgba(0, 0, 0, 0.4));
+        }
+        .pin-head {
+            background: #ef4444; color: white; font-size: 26px; width: 48px; height: 48px; display: flex;
+            align-items: center; justify-content: center; border-radius: 50% 50% 50% 0; transform: rotate(-45deg);
+            box-shadow: 0 0 20px rgba(239, 68, 68, 0.8); border: 2px solid #fff;
+        }
+        .pin-head span { transform: rotate(45deg); }
+        .pin-shadow {
+            width: 12px; height: 5px; background: rgba(0, 0, 0, 0.5); border-radius: 50%;
+            margin-top: -2px; animation: pulse-shadow 1.5s infinite ease-in-out;
+        }
+        @keyframes pulse-shadow {
+            0% { transform: scale(1); opacity: 0.6; }
+            50% { transform: scale(0.6); opacity: 0.3; }
+            100% { transform: scale(1); opacity: 0.6; }
+        }
+        
+        .pulse-ring { animation: pulse-ring-anim 1.5s infinite; }
+        @keyframes pulse-ring-anim { 
+            0% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(59, 130, 246, 0.7); } 
+            70% { transform: scale(1); box-shadow: 0 0 0 10px rgba(59, 130, 246, 0); } 
+            100% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(59, 130, 246, 0); } 
+        }
+    </style>
+</head>
+<body class="bg-slate-950 text-slate-100 min-h-screen pb-10">
+
+    <nav class="bg-slate-900 border-b border-slate-800 px-6 py-4 flex justify-between items-center sticky top-0 z-40 shadow-lg">
+        <span class="text-xl font-extrabold text-blue-400">Meriride 🚖</span>
+        <div class="flex items-center space-x-4">
+            <span class="bg-blue-500/10 text-blue-400 border border-blue-500/20 px-3 py-1 rounded-lg text-xs font-bold uppercase tracking-wider">Passenger</span>
+            <button onclick="logout()" class="text-xs font-bold text-slate-400 hover:text-white transition">Logout</button>
+        </div>
+    </nav>
+
+    <main class="max-w-3xl mx-auto p-4 md:p-8 mt-4 relative z-10">
+        
+        <div id="bookingSection">
+            <div class="mb-6">
+                <h1 class="text-2xl font-bold text-white">Smart Radar Booking 🌍</h1>
+                <p class="text-sm text-slate-400 mt-1">Our engine scans the 200m radius. If a car is slightly away, we'll guide you to it!</p>
+            </div>
+
+            <div class="space-y-6">
+                <div class="bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-xl relative overflow-hidden">
+                    <div class="absolute top-0 left-0 w-1 h-full bg-emerald-500"></div>
+                    <h2 class="text-lg font-bold text-white mb-4 flex items-center">🟢 Pickup Location</h2>
+                    
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div>
+                            <label class="block text-xs font-semibold uppercase text-slate-400 mb-1">Place Name</label>
+                            <input type="text" id="pickupName" placeholder="e.g. Ragarganj" class="w-full bg-slate-800 border border-slate-700 rounded-lg px-4 py-3 text-white focus:outline-none focus:border-emerald-500 transition">
+                        </div>
+                        <div>
+                            <label class="block text-xs font-semibold uppercase text-slate-400 mb-1">GPS Coordinates</label>
+                            <div class="flex space-x-2">
+                                <input type="text" id="pickupCoords" placeholder="Map GPS" readonly class="w-full bg-slate-800/50 border border-slate-700 rounded-lg px-4 py-3 text-slate-400 font-mono text-sm">
+                                <button type="button" onclick="openMapModal('pickupCoords', 'pickupName')" class="bg-emerald-600 hover:bg-emerald-500 text-white px-4 rounded-lg font-bold transition flex items-center justify-center whitespace-nowrap shadow-lg shadow-emerald-500/30">
+                                    🗺️ Map Pin
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-xl relative overflow-hidden">
+                    <div class="absolute top-0 left-0 w-1 h-full bg-rose-500"></div>
+                    <h2 class="text-lg font-bold text-white mb-4">📍 Destination</h2>
+                    
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div>
+                            <label class="block text-xs font-semibold uppercase text-slate-400 mb-1">Place Name</label>
+                            <input type="text" id="dropName" placeholder="e.g. Gonda" class="w-full bg-slate-800 border border-slate-700 rounded-lg px-4 py-3 text-white focus:outline-none focus:border-rose-500 transition">
+                        </div>
+                        <div>
+                            <label class="block text-xs font-semibold uppercase text-slate-400 mb-1">Coordinates</label>
+                            <div class="flex space-x-2">
+                                <input type="text" id="dropCoords" placeholder="Map GPS" readonly class="w-full bg-slate-800/50 border border-slate-700 rounded-lg px-3 py-3 text-slate-400 font-mono text-xs">
+                                <button type="button" onclick="openMapModal('dropCoords', 'dropName')" class="bg-rose-600 hover:bg-rose-500 text-white px-4 rounded-lg font-bold transition flex items-center justify-center whitespace-nowrap shadow-lg shadow-rose-500/30">
+                                    🗺️ Map Pin
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <button onclick="scanSmartMatchedDrivers()" id="searchBtn" class="w-full mt-4 bg-blue-600 hover:bg-blue-500 text-white font-extrabold py-4 rounded-xl transition shadow-lg shadow-blue-600/30 text-lg">
+                    📡 Scan Route Network
+                </button>
+
+                <div id="matchResults" class="space-y-4 mt-6"></div>
+            </div>
+        </div>
+        
+        <div id="trackingSection" class="hidden space-y-6 max-w-md mx-auto">
+            <div class="bg-gradient-to-br from-[#0a1120] to-[#0f172a] border border-blue-500/30 rounded-2xl p-6 shadow-2xl text-center relative overflow-hidden mt-6">
+                <div id="loadingPulse" class="pulse-ring w-16 h-16 mx-auto bg-blue-500/20 rounded-full flex items-center justify-center mb-4 border border-blue-500/50">
+                    <span class="text-2xl" id="statusIcon">📡</span>
+                </div>
+                <h2 id="mainStatusText" class="text-2xl font-black text-white mb-1">Sending Request...</h2>
+                <p id="subStatusText" class="text-xs text-slate-400">Waiting for driver to confirm your ride.</p>
+            </div>
+
+            <div id="driverInfoCard" class="hidden bg-[#0a1120] border border-emerald-500/30 rounded-2xl p-5 shadow-lg relative overflow-hidden">
+                <div class="absolute top-0 right-0 bg-emerald-500 text-white text-[10px] font-black uppercase px-3 py-1 rounded-bl-lg">Driver Found</div>
+                <p class="text-[10px] text-slate-400 uppercase font-bold tracking-wider mb-2">Your Pilot</p>
+                <div class="flex justify-between items-center">
+                    <div>
+                        <p id="driverNameTxt" class="text-xl font-black text-emerald-400">Loading...</p>
+                        <p id="driverPhoneTxt" class="text-sm font-mono text-slate-300 mt-1">Fetching details...</p>
+                    </div>
+                    <a id="callDriverBtn" href="#" class="bg-emerald-500/20 text-emerald-400 border border-emerald-500/50 w-12 h-12 rounded-full flex items-center justify-center text-xl hover:bg-emerald-500 hover:text-white transition">
+                        📞
+                    </a>
+                </div>
+            </div>
+
+            <div class="bg-[#0a1120] border border-slate-800 rounded-2xl p-5 shadow-lg">
+                <h3 class="text-xs font-bold text-slate-400 uppercase tracking-widest mb-4">Live Journey Status</h3>
+                
+                <div class="space-y-4 relative before:absolute before:inset-0 before:ml-5 before:-translate-x-px md:before:mx-auto md:before:translate-x-0 before:h-full before:w-0.5 before:bg-slate-800">
+                    <div class="relative flex items-center justify-between md:justify-normal md:odd:flex-row-reverse group is-active">
+                        <div class="flex items-center justify-center w-10 h-10 rounded-full border-2 bg-slate-900 border-blue-500 text-blue-500 shadow-[0_0_10px_rgba(59,130,246,0.3)] z-10 font-bold text-sm" id="step1Icon">1</div>
+                        <div class="w-[calc(100%-4rem)] md:w-[calc(50%-2.5rem)] p-3 rounded-lg border border-blue-500/30 bg-blue-500/10" id="step1Box">
+                            <p class="text-sm font-bold text-blue-400">Ride Requested</p>
+                        </div>
+                    </div>
+                    <div class="relative flex items-center justify-between md:justify-normal md:odd:flex-row-reverse group">
+                        <div class="flex items-center justify-center w-10 h-10 rounded-full border-2 bg-slate-900 border-slate-700 text-slate-500 z-10 font-bold text-sm" id="step2Icon">2</div>
+                        <div class="w-[calc(100%-4rem)] md:w-[calc(50%-2.5rem)] p-3 rounded-lg border border-slate-800" id="step2Box">
+                            <p class="text-sm font-bold text-slate-400">Driver Arrived</p>
+                        </div>
+                    </div>
+                    <div class="relative flex items-center justify-between md:justify-normal md:odd:flex-row-reverse group">
+                        <div class="flex items-center justify-center w-10 h-10 rounded-full border-2 bg-slate-900 border-slate-700 text-slate-500 z-10 font-bold text-sm" id="step3Icon">3</div>
+                        <div class="w-[calc(100%-4rem)] md:w-[calc(50%-2.5rem)] p-3 rounded-lg border border-slate-800" id="step3Box">
+                            <p class="text-sm font-bold text-slate-400">On Trip</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <button onclick="cancelRide()" id="cancelBtn" class="w-full bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 border border-rose-500/30 font-bold py-3 rounded-xl transition">
+                Cancel Request
+            </button>
+        </div>
+
+    </main>
+
+    <!-- LIVE MAP MODAL (Hidden Initially) -->
+    <div id="mapModal" class="fixed inset-0 z-50 bg-slate-950/90 backdrop-blur-sm hidden flex-col items-center justify-center p-2 md:p-4">
+        <div class="w-full max-w-4xl bg-slate-900 border border-slate-700 rounded-2xl shadow-2xl overflow-hidden flex flex-col h-[90vh]">
+            <div class="bg-slate-800 px-4 py-4 border-b border-slate-700">
+                <div class="flex justify-between items-center mb-3">
+                    <h2 class="text-lg font-bold text-white flex items-center">🔍 Drop Pin on Map</h2>
+                    <button onclick="closeMap()" class="text-slate-400 hover:text-rose-400 transition text-2xl font-bold">✖</button>
+                </div>
+                <div class="relative z-50 flex space-x-2">
+                    <div class="relative flex-1">
+                        <input type="text" id="mapSearchBox" placeholder="Type location name..." class="w-full bg-slate-950 border border-blue-500/50 rounded-lg pl-10 pr-4 py-3 text-white focus:outline-none focus:border-blue-400 transition shadow-inner placeholder-slate-500">
+                        <span class="absolute left-3 top-3.5 text-slate-400">📍</span>
+                        <ul id="searchSuggestions" class="absolute left-0 right-0 mt-1 bg-slate-800 border border-slate-600 rounded-lg shadow-2xl hidden max-h-56 overflow-y-auto divide-y divide-slate-700"></ul>
+                    </div>
+                    <button onclick="locateMeOnMap()" class="bg-blue-600 hover:bg-blue-500 text-white px-4 rounded-lg font-bold transition flex items-center justify-center whitespace-nowrap shadow-lg shadow-blue-500/30 flex-shrink-0">
+                        🎯 Me
+                    </button>
+                </div>
+            </div>
+            <div id="liveMap" class="w-full flex-1 relative bg-slate-800">
+                <div class="map-center-pin">
+                    <div class="pin-head"><span>📍</span></div>
+                    <div class="pin-shadow"></div>
+                </div>
+            </div>
+            <div class="p-4 md:p-6 bg-slate-900 border-t border-slate-700 shadow-[0_-10px_15px_-3px_rgba(0,0,0,0.3)]">
+                <div class="flex items-center justify-between mb-4">
+                    <span class="text-xs font-bold text-slate-400 uppercase tracking-widest hidden md:inline">Exact Pin Coordinates:</span>
+                    <span id="liveCoordsDisplay" class="font-mono text-emerald-400 font-bold bg-emerald-500/10 border border-emerald-500/20 px-3 py-1.5 rounded-lg shadow-inner w-full md:w-auto text-center">Searching...</span>
+                </div>
+                <button onclick="confirmMapLocation()" class="w-full bg-emerald-600 hover:bg-emerald-500 text-white font-extrabold py-3.5 rounded-xl transition shadow-lg shadow-emerald-600/30 text-lg uppercase tracking-wide">
+                    ✅ Lock Exact Location
+                </button>
+            </div>
+        </div>
+    </div>
+    <!-- JAVASCRIPT LOGIC -->
+    <script>
+        const SUPABASE_URL = 'https://tvwhtyxosovscygvahow.supabase.co';
+        const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InR2d2h0eXhvc292c2N5Z3ZhaG93Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODU2MDA2MzksImV4cCI6MjEwMTE3NjYzOX0.kVLKQsl4gfIex7LQJqh-GXl-QgEIdvqK8mY7AoauzGI';
+        
+        const supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+        
+        let mapInstance = null;
+        let activeTargetInput = null;
+        let sourceNameInput = null;
+        let selectedSearchPlaceName = ""; 
+
+        let passengerProfile = null;
+        let activeRideId = null;
+        let trackingInterval = null;
+
+        function checkAuth() {
+            try {
+                const userData = localStorage.getItem('meriride_user');
+                if (!userData) { window.location.href = 'login.html'; return; }
+                passengerProfile = JSON.parse(userData);
+                checkExistingRide(); 
+            } catch(e) { console.error("Auth Error"); }
+        }
+
+        function logout() {
+            localStorage.removeItem('meriride_user');
+            window.location.href = 'login.html';
+        }
+
+        function openMapModal(targetInputId, sourceInputId) {
+            activeTargetInput = targetInputId;
+            sourceNameInput = sourceInputId;
+            selectedSearchPlaceName = ""; 
+            
+            document.getElementById('mapSearchBox').value = '';
+            document.getElementById('searchSuggestions').classList.add('hidden');
+            
+            document.getElementById('mapModal').classList.remove('hidden');
+            document.body.style.overflow = 'hidden';
+
+            let lat = 27.1303; let lng = 81.9673; 
+
+            setTimeout(() => {
+                if (!mapInstance) {
+                    mapInstance = L.map('liveMap', { zoomControl: false }).setView([lat, lng], 13);
+                    L.tileLayer('https://mt1.google.com/vt/lyrs=m&x={x}&y={y}&z={z}',{ maxZoom: 20, attribution: 'Google Maps' }).addTo(mapInstance);
+                    mapInstance.on('move', function () {
+                        const center = mapInstance.getCenter();
+                        document.getElementById('liveCoordsDisplay').textContent = `${center.lat.toFixed(6)}, ${center.lng.toFixed(6)}`;
+                    });
+                }
+                locateMeOnMap();
+                mapInstance.invalidateSize();
+            }, 300);
+        }
+
+        function locateMeOnMap() {
+            document.getElementById('liveCoordsDisplay').textContent = "Fetching Live GPS...";
+            if (navigator.geolocation) {
+                navigator.geolocation.getCurrentPosition(
+                    (position) => {
+                        const lat = position.coords.latitude; const lng = position.coords.longitude;
+                        mapInstance.flyTo([lat, lng], 16, { duration: 1.5 });
+                        document.getElementById('liveCoordsDisplay').textContent = `${lat.toFixed(6)}, ${lng.toFixed(6)}`;
+                    },
+                    (error) => { document.getElementById('liveCoordsDisplay').textContent = "Drag map manually."; },
+                    { enableHighAccuracy: true }
+                );
+            } else {
+                document.getElementById('liveCoordsDisplay').textContent = "Drag map manually.";
+            }
+        }
+
+        function closeMap() {
+            document.getElementById('mapModal').classList.add('hidden');
+            document.body.style.overflow = '';
+            document.getElementById('searchSuggestions').classList.add('hidden');
+        }
+
+        async function confirmMapLocation() {
+            const center = mapInstance.getCenter();
+            const lat = center.lat; const lng = center.lng;
+
+            document.getElementById(activeTargetInput).value = `${lat.toFixed(6)}, ${lng.toFixed(6)}`;
+            const nameInput = document.getElementById(sourceNameInput);
+
+            if (selectedSearchPlaceName) {
+                nameInput.value = selectedSearchPlaceName;
+            } else if (!nameInput.value || nameInput.value.trim() === "") {
+                nameInput.value = "⏳ Fetching name...";
+                try {
+                    const res = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}&zoom=18&addressdetails=1`);
+                    const data = await res.json();
+                    if (data && data.address) {
+                        const addr = data.address;
+                        let smartName = addr.village || addr.hamlet || addr.suburb || addr.neighbourhood || addr.town || addr.city;
+                        nameInput.value = smartName || data.name || ""; 
+                    } else { nameInput.value = ""; }
+                } catch (e) { nameInput.value = ""; }
+            }
+            closeMap();
+        }
+
+        let searchTimeout;
+        const searchBox = document.getElementById('mapSearchBox');
+        const suggBox = document.getElementById('searchSuggestions');
+
+        searchBox.addEventListener('input', (e) => {
+            clearTimeout(searchTimeout);
+            const query = e.target.value.trim();
+            selectedSearchPlaceName = query; 
+            if(query.length < 2) { suggBox.classList.add('hidden'); return; }
+            searchTimeout = setTimeout(() => triggerSearch(query), 300);
+        });
+
+        async function triggerSearch(query) {
+            suggBox.innerHTML = '<li class="px-5 py-3 text-sm text-slate-400">⏳ Searching...</li>';
+            suggBox.classList.remove('hidden');
+            try {
+                const res = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(query)}&countrycodes=in&addressdetails=1&limit=6`);
+                const data = await res.json();
+                suggBox.innerHTML = '';
+                if(data && data.length > 0) {
+                    data.forEach((item) => {
+                        const li = document.createElement('li');
+                        li.className = 'px-5 py-3 hover:bg-blue-600 cursor-pointer text-sm text-slate-200 transition group flex items-start';
+                        const fullName = item.display_name;
+                        const shortName = item.address.village || item.address.suburb || item.address.town || fullName.split(',')[0];
+                        li.innerHTML = `<span class="mr-3 text-lg opacity-50 group-hover:opacity-100 group-hover:text-white">📍</span> 
+                                        <div><span class="font-bold text-white block">${shortName}</span>
+                                        <span class="text-xs text-slate-400 group-hover:text-blue-200">${fullName}</span></div>`;
+                        li.onclick = () => {
+                            mapInstance.flyTo([parseFloat(item.lat), parseFloat(item.lon)], 16, { duration: 1.5 });
+                            searchBox.value = shortName;
+                            selectedSearchPlaceName = shortName; 
+                            suggBox.classList.add('hidden');
+                        };
+                        suggBox.appendChild(li);
+                    });
+                } else { suggBox.innerHTML = '<li class="px-5 py-4 text-sm text-rose-400">No match found.</li>'; }
+            } catch(err) { suggBox.innerHTML = '<li class="px-5 py-4 text-sm text-rose-400">Network error.</li>'; }
+        }
+
+        function calculateDistance(lat1, lon1, lat2, lon2) {
+            const R = 6371e3;
+            const φ1 = lat1 * Math.PI / 180, φ2 = lat2 * Math.PI / 180;
+            const Δφ = (lat2 - lat1) * Math.PI / 180, Δλ = (lon2 - lon1) * Math.PI / 180;
+            const a = Math.sin(Δφ/2) * Math.sin(Δφ/2) + Math.cos(φ1) * Math.cos(φ2) * Math.sin(Δλ/2) * Math.sin(Δλ/2);
+            return R * (2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a))); 
+        }
+
+        async function scanSmartMatchedDrivers() {
+            const pickupCoordsStr = document.getElementById('pickupCoords').value;
+            const dropCoordsStr = document.getElementById('dropCoords').value;
+            const dropName = document.getElementById('dropName').value;
+
+            if (!pickupCoordsStr || !dropCoordsStr) return alert("Please map both your Pickup and Destination locations first!");
+
+            const [pLat, pLng] = pickupCoordsStr.split(',').map(Number);
+            const [dLat, dLng] = dropCoordsStr.split(',').map(Number);
+
+            const resultsDiv = document.getElementById('matchResults');
+            const btn = document.getElementById('searchBtn');
+            btn.innerHTML = "📡 Scanning Network...";
+            resultsDiv.innerHTML = '';
+
+            const { data: drivers, error } = await supabaseClient.from('driver_live_routes').select('*').eq('status', 'online');
+
+            if (error || !drivers || drivers.length === 0) {
+                btn.innerHTML = "📡 Scan Route Network";
+                resultsDiv.innerHTML = '<div class="bg-rose-500/10 border border-rose-500/20 p-4 rounded-xl text-rose-400 text-center font-bold">No drivers online right now.</div>';
+                return;
+            }
+            
+            let exactMatchCount = 0;
+            let suggestionHTML = '';
+
+            for (let driver of drivers) {
+                const pickupDistMeters = calculateDistance(pLat, pLng, driver.start_lat, driver.start_lng);
+                const dropDistMeters = calculateDistance(dLat, dLng, driver.drop_lat, driver.drop_lng);
+
+                if (pickupDistMeters <= 250 && dropDistMeters <= 250) { 
+                    exactMatchCount++;
+                    const html = `
+                        <div class="bg-slate-900 border-2 border-emerald-500/50 rounded-2xl p-4 shadow-lg shadow-emerald-500/10">
+                            <div class="flex justify-between items-start mb-3">
+                                <div>
+                                    <h4 class="font-bold text-white text-base">Driver: ${driver.driver_name}</h4>
+                                    <p class="text-xs text-slate-400">🚗 ${driver.vehicle_no}</p>
+                                    <p class="text-[11px] text-emerald-400 font-bold mt-1">✅ Exact Match (At your location)</p>
+                                </div>
+                                <span class="text-xl font-extrabold text-emerald-400">₹${driver.fare}</span>
+                            </div>
+                            <button onclick="requestRide('${driver.driver_id}', ${pLat}, ${pLng}, ${dLat}, ${dLng}, '${dropName}')" class="w-full bg-emerald-600 hover:bg-emerald-500 text-white font-bold py-3 rounded-xl text-sm transition shadow-md">
+                                Confirm & Request Ride
+                            </button>
+                        </div>
+                    `;
+                    resultsDiv.insertAdjacentHTML('beforeend', html);
+                }
+                else if (dropDistMeters <= 250 && pickupDistMeters > 250 && pickupDistMeters <= 1500) {
+                    let walkDiscount = Math.floor(pickupDistMeters / 100) * 5; 
+                    if (walkDiscount > driver.fare * 0.5) walkDiscount = Math.floor(driver.fare * 0.3);
+                    let discountedFare = driver.fare - walkDiscount;
+                    suggestionHTML += `
+                        <div class="bg-slate-900 border border-amber-500/50 rounded-2xl p-5 shadow-lg shadow-amber-500/10 mb-4">
+                            <div class="flex items-center justify-between mb-3">
+                                <h4 class="font-black text-amber-400 text-sm flex items-center uppercase tracking-wide">
+                                    <span class="animate-pulse mr-2">⚠️</span> Smart Interceptor
+                                </h4>
+                                <span class="bg-amber-500/20 text-amber-400 text-[10px] font-bold px-2 py-1 rounded">WALK & SAVE</span>
+                            </div>
+                            <p class="text-xs text-slate-300 mb-3 leading-relaxed">
+                                Driver <b class="text-white">${driver.driver_name}</b> is heading exactly to your destination, but their route starts <b>${Math.round(pickupDistMeters)}m</b> away.
+                            </p>
+                            <button onclick="autoSetPickup(${driver.start_lat}, ${driver.start_lng})" class="w-full bg-amber-600 hover:bg-amber-500 text-white font-bold py-3 rounded-xl text-sm transition shadow-md">
+                                📍 Snap Pin & Book
+                            </button>
+                        </div>
+                    `;
+                }
+            }
+
+            btn.innerHTML = "📡 Scan Route Network";
+            if (exactMatchCount === 0 && suggestionHTML !== '') {
+                setTimeout(() => alert("🚨 Out of Range Alert: Your pickup is outside the 200m radius! Check Smart Suggestions to walk and save money!"), 300);
+                resultsDiv.innerHTML = `<div class="bg-rose-500/10 border border-rose-500/30 p-4 rounded-xl text-rose-400 text-center text-sm font-bold mb-4 shadow-lg">📡 No exact pickups within 200m. See suggestions below.</div>` + suggestionHTML;
+            } else if (exactMatchCount === 0 && suggestionHTML === '') {
+                resultsDiv.innerHTML = '<div class="bg-slate-800 border border-slate-700 p-4 rounded-xl text-slate-400 text-center font-bold text-sm">No drivers found heading to your exact destination right now.</div>';
+            }
+        }
+
+        function autoSetPickup(lat, lng) {
+            document.getElementById('pickupCoords').value = `${lat}, ${lng}`;
+            document.getElementById('pickupName').value = "📍 Adjusted Pick-up Point";
+            alert("✨ Pin Snapped successfully! Re-scanning network...");
+            setTimeout(scanSmartMatchedDrivers, 500);
+        }
+        // ==========================================
+        // 📡 FIXED LIVE TRACKING & RIDE REQUEST LOGIC
+        // ==========================================
+
+        async function requestRide(driverId, passLat, passLng, dropLat, dropLng, dropName) {
+            if(!passengerProfile) { alert("Please login again!"); return; }
+
+            const reqData = {
+                driver_id: driverId,
+                passenger_id: passengerProfile.id,
+                passenger_name: passengerProfile.full_name,
+                passenger_phone: passengerProfile.phone || "",
+                pickup_lat: passLat,
+                pickup_lng: passLng,
+                drop_lat: dropLat,
+                drop_lng: dropLng,
+                destination: dropName,
+                status: 'pending'
+            };
+
+            try {
+                const { data, error } = await supabaseClient.from('ride_requests').insert([reqData]).select().single();
+                if(error) throw error;
+                
+                activeRideId = data.id;
+                switchToTrackingUI();
+                startTracking();
+
+            } catch(e) { alert("Booking Failed: " + e.message); }
+        }
+
+        async function checkExistingRide() {
+            if(!passengerProfile) return;
+            try {
+                // FIXED: Removed problematic join to ensure stable sync
+                const { data } = await supabaseClient.from('ride_requests')
+                    .select('*') 
+                    .eq('passenger_id', passengerProfile.id)
+                    .in('status', ['pending', 'accepted', 'arrived', 'started'])
+                    .order('created_at', { ascending: false })
+                    .limit(1).maybeSingle();
+
+                if (data) {
+                    activeRideId = data.id;
+                    switchToTrackingUI();
+                    updateTrackingData(data);
+                    startTracking();
+                }
+            } catch (err) { console.error(err); }
+        }
+
+        function startTracking() {
+            if (trackingInterval) clearInterval(trackingInterval);
+            
+            trackingInterval = setInterval(async () => {
+                if(!activeRideId) return;
+                
+                // FIXED: Removed problematic join to ensure stable sync
+                const { data, error } = await supabaseClient.from('ride_requests')
+                    .select('*')
+                    .eq('id', activeRideId)
+                    .single();
+                    
+                if(data && !error) updateTrackingData(data);
+            }, 2000); // 2 seconds for faster updates
+        }
+
+        function updateTrackingData(rideData) {
+            const status = rideData.status;
+            const mainText = document.getElementById('mainStatusText');
+            const subText = document.getElementById('subStatusText');
+            const icon = document.getElementById('statusIcon');
+            const driverCard = document.getElementById('driverInfoCard');
+            
+            if (status !== 'pending' && status !== 'cancelled') {
+                driverCard.classList.remove('hidden');
+                // Default fallback if foreign key fails
+                document.getElementById('driverNameTxt').textContent = 'Pilot Assigned';
+                document.getElementById('driverPhoneTxt').textContent = 'Tracking Active';
+                
+                if(rideData.driver_profiles) {
+                    document.getElementById('driverNameTxt').textContent = rideData.driver_profiles.full_name || 'Pilot Assigned';
+                    document.getElementById('driverPhoneTxt').textContent = rideData.driver_profiles.phone || 'Number unavailable';
+                    document.getElementById('callDriverBtn').href = `tel:${rideData.driver_profiles.phone}`;
+                }
+            }
+
+            // Sync text with steps
+            if (status === 'pending') {
+                mainText.textContent = "Sending Request...";
+                subText.textContent = "Waiting for pilot to confirm.";
+                icon.textContent = "📡";
+                document.getElementById('cancelBtn').classList.remove('hidden');
+                setStepActive(1);
+            } 
+            else if (status === 'accepted') {
+                mainText.textContent = "Driver is on the way! 🚖";
+                subText.textContent = "Your driver has accepted and is heading to you.";
+                icon.textContent = "🚖";
+                document.getElementById('loadingPulse').classList.replace('border-blue-500/50', 'border-emerald-500/50');
+                document.getElementById('loadingPulse').classList.replace('bg-blue-500/20', 'bg-emerald-500/20');
+                document.getElementById('cancelBtn').classList.remove('hidden');
+                setStepActive(1); 
+            }
+            else if (status === 'arrived') {
+                mainText.textContent = "Driver has Arrived! 📍";
+                subText.textContent = "Please meet your driver at the pickup point.";
+                icon.textContent = "📍";
+                document.getElementById('cancelBtn').classList.add('hidden'); 
+                setStepActive(2);
+            }
+            else if (status === 'started') {
+                mainText.textContent = "Ride in Progress 🛣️";
+                subText.textContent = "You are on your way to the destination.";
+                icon.textContent = "🏁";
+                document.getElementById('cancelBtn').classList.add('hidden');
+                setStepActive(3);
+            }
+            else if (status === 'completed') {
+                mainText.textContent = "Ride Completed! ✅";
+                subText.textContent = "Thank you for riding with Meriride.";
+                icon.textContent = "🎉";
+                clearInterval(trackingInterval);
+                setTimeout(() => {
+                    alert("Trip Complete! Redirecting back to home.");
+                    window.location.reload();
+                }, 3000);
+            }
+        }
+
+        function setStepActive(stepNum) {
+            for(let i=1; i<=3; i++) {
+                document.getElementById(`step${i}Icon`).className = "flex items-center justify-center w-10 h-10 rounded-full border-2 bg-slate-900 border-slate-700 text-slate-500 z-10 font-bold text-sm";
+                document.getElementById(`step${i}Box`).className = "w-[calc(100%-4rem)] md:w-[calc(50%-2.5rem)] p-3 rounded-lg border border-slate-800";
+                document.getElementById(`step${i}Box`).firstElementChild.className = "text-sm font-bold text-slate-400";
+            }
+            for(let i=1; i<=stepNum; i++) {
+                let colorClass = i === 1 ? 'blue' : (i === 2 ? 'amber' : 'emerald');
+                document.getElementById(`step${i}Icon`).className = `flex items-center justify-center w-10 h-10 rounded-full border-2 bg-slate-900 border-${colorClass}-500 text-${colorClass}-500 shadow-[0_0_10px_rgba(0,0,0,0.5)] z-10 font-bold text-sm`;
+                document.getElementById(`step${i}Box`).className = `w-[calc(100%-4rem)] md:w-[calc(50%-2.5rem)] p-3 rounded-lg border border-${colorClass}-500/30 bg-${colorClass}-500/10`;
+                document.getElementById(`step${i}Box`).firstElementChild.className = `text-sm font-bold text-${colorClass}-400`;
+            }
+        }
+
+        async function cancelRide() {
+            if(confirm("Are you sure you want to cancel this ride?")) {
+                try {
+                    await supabaseClient.from('ride_requests').update({ status: 'cancelled' }).eq('id', activeRideId);
+                    clearInterval(trackingInterval);
+                    window.location.reload();
+                } catch(e) { alert("Error cancelling ride."); }
+            }
+        }
+
+        function switchToTrackingUI() {
+            document.getElementById('bookingSection').classList.add('hidden');
+            document.getElementById('trackingSection').classList.remove('hidden');
+        }
+
+        checkAuth();
+    </script>
+</body>
+</html>
