@@ -10,6 +10,9 @@
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
     
+    <!-- 👇 NEW: QR Code Library Added 👇 -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+    
     <!-- SUPABASE -->
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     
@@ -125,6 +128,15 @@
                 <p id="subStatusText" class="text-xs text-slate-400">Waiting for driver to confirm your ride.</p>
             </div>
 
+            <!-- 👇 NEW: BOARDING PASS (QR CODE) UI ADDED HERE 👇 -->
+            <div id="qrCodeContainer" class="hidden bg-[#0a1120] border-2 border-indigo-500/50 rounded-2xl p-6 shadow-[0_0_20px_rgba(99,102,241,0.15)] text-center">
+                <p class="text-xs text-slate-400 uppercase font-black tracking-widest mb-4 flex justify-center items-center"><span class="mr-2">🎫</span> Your Boarding Pass</p>
+                <div id="qrcodeBox" class="flex justify-center p-3 bg-white rounded-xl mx-auto w-fit"></div>
+                <p class="text-3xl font-black tracking-widest text-indigo-400 mt-4" id="bookingCodeText">------</p>
+                <p class="text-[11px] text-slate-500 mt-2 font-bold uppercase">Show this QR to Pilot to start ride</p>
+            </div>
+            <!-- 👆 END QR CODE UI 👆 -->
+
             <div id="driverInfoCard" class="hidden bg-[#0a1120] border border-emerald-500/30 rounded-2xl p-5 shadow-lg relative overflow-hidden">
                 <div class="absolute top-0 right-0 bg-emerald-500 text-white text-[10px] font-black uppercase px-3 py-1 rounded-bl-lg">Driver Found</div>
                 <p class="text-[10px] text-slate-400 uppercase font-bold tracking-wider mb-2">Your Pilot</p>
@@ -207,26 +219,20 @@
             </div>
         </div>
     </div>
-    <!-- JAVASCRIPT LOGIC -->
+        <!-- JAVASCRIPT LOGIC PART 2A -->
     <script>
         const SUPABASE_URL = 'https://tvwhtyxosovscygvahow.supabase.co';
         const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InR2d2h0eXhvc292c2N5Z3ZhaG93Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODU2MDA2MzksImV4cCI6MjEwMTE3NjYzOX0.kVLKQsl4gfIex7LQJqh-GXl-QgEIdvqK8mY7AoauzGI';
         
         const supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
         
-        let mapInstance = null;
-        let activeTargetInput = null;
-        let sourceNameInput = null;
-        let selectedSearchPlaceName = ""; 
-
-        let passengerProfile = null;
-        let activeRideId = null;
-        let trackingInterval = null;
+        let mapInstance = null; let activeTargetInput = null; let sourceNameInput = null; let selectedSearchPlaceName = ""; 
+        let passengerProfile = null; let activeRideId = null; let trackingInterval = null;
 
         function checkAuth() {
             try {
                 const userData = localStorage.getItem('meriride_user');
-                if (!userData) { window.location.href = 'login.html'; return; }
+                if (!userData) { window.location.href = 'index.html'; return; }
                 passengerProfile = JSON.parse(userData);
                 checkExistingRide(); 
             } catch(e) { console.error("Auth Error"); }
@@ -234,20 +240,13 @@
 
         function logout() {
             localStorage.removeItem('meriride_user');
-            window.location.href = 'login.html';
+            window.location.href = 'index.html';
         }
 
         function openMapModal(targetInputId, sourceInputId) {
-            activeTargetInput = targetInputId;
-            sourceNameInput = sourceInputId;
-            selectedSearchPlaceName = ""; 
-            
-            document.getElementById('mapSearchBox').value = '';
-            document.getElementById('searchSuggestions').classList.add('hidden');
-            
-            document.getElementById('mapModal').classList.remove('hidden');
-            document.body.style.overflow = 'hidden';
-
+            activeTargetInput = targetInputId; sourceNameInput = sourceInputId; selectedSearchPlaceName = ""; 
+            document.getElementById('mapSearchBox').value = ''; document.getElementById('searchSuggestions').classList.add('hidden');
+            document.getElementById('mapModal').classList.remove('hidden'); document.body.style.overflow = 'hidden';
             let lat = 27.1303; let lng = 81.9673; 
 
             setTimeout(() => {
@@ -259,8 +258,7 @@
                         document.getElementById('liveCoordsDisplay').textContent = `${center.lat.toFixed(6)}, ${center.lng.toFixed(6)}`;
                     });
                 }
-                locateMeOnMap();
-                mapInstance.invalidateSize();
+                locateMeOnMap(); mapInstance.invalidateSize();
             }, 300);
         }
 
@@ -276,21 +274,16 @@
                     (error) => { document.getElementById('liveCoordsDisplay').textContent = "Drag map manually."; },
                     { enableHighAccuracy: true }
                 );
-            } else {
-                document.getElementById('liveCoordsDisplay').textContent = "Drag map manually.";
-            }
+            } else { document.getElementById('liveCoordsDisplay').textContent = "Drag map manually."; }
         }
 
         function closeMap() {
             document.getElementById('mapModal').classList.add('hidden');
-            document.body.style.overflow = '';
-            document.getElementById('searchSuggestions').classList.add('hidden');
+            document.body.style.overflow = ''; document.getElementById('searchSuggestions').classList.add('hidden');
         }
 
         async function confirmMapLocation() {
-            const center = mapInstance.getCenter();
-            const lat = center.lat; const lng = center.lng;
-
+            const center = mapInstance.getCenter(); const lat = center.lat; const lng = center.lng;
             document.getElementById(activeTargetInput).value = `${lat.toFixed(6)}, ${lng.toFixed(6)}`;
             const nameInput = document.getElementById(sourceNameInput);
 
@@ -311,39 +304,28 @@
             closeMap();
         }
 
-        let searchTimeout;
-        const searchBox = document.getElementById('mapSearchBox');
-        const suggBox = document.getElementById('searchSuggestions');
-
+        let searchTimeout; const searchBox = document.getElementById('mapSearchBox'); const suggBox = document.getElementById('searchSuggestions');
         searchBox.addEventListener('input', (e) => {
-            clearTimeout(searchTimeout);
-            const query = e.target.value.trim();
-            selectedSearchPlaceName = query; 
+            clearTimeout(searchTimeout); const query = e.target.value.trim(); selectedSearchPlaceName = query; 
             if(query.length < 2) { suggBox.classList.add('hidden'); return; }
             searchTimeout = setTimeout(() => triggerSearch(query), 300);
         });
 
         async function triggerSearch(query) {
-            suggBox.innerHTML = '<li class="px-5 py-3 text-sm text-slate-400">⏳ Searching...</li>';
-            suggBox.classList.remove('hidden');
+            suggBox.innerHTML = '<li class="px-5 py-3 text-sm text-slate-400">⏳ Searching...</li>'; suggBox.classList.remove('hidden');
             try {
                 const res = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(query)}&countrycodes=in&addressdetails=1&limit=6`);
-                const data = await res.json();
-                suggBox.innerHTML = '';
+                const data = await res.json(); suggBox.innerHTML = '';
                 if(data && data.length > 0) {
                     data.forEach((item) => {
                         const li = document.createElement('li');
                         li.className = 'px-5 py-3 hover:bg-blue-600 cursor-pointer text-sm text-slate-200 transition group flex items-start';
                         const fullName = item.display_name;
                         const shortName = item.address.village || item.address.suburb || item.address.town || fullName.split(',')[0];
-                        li.innerHTML = `<span class="mr-3 text-lg opacity-50 group-hover:opacity-100 group-hover:text-white">📍</span> 
-                                        <div><span class="font-bold text-white block">${shortName}</span>
-                                        <span class="text-xs text-slate-400 group-hover:text-blue-200">${fullName}</span></div>`;
+                        li.innerHTML = `<span class="mr-3 text-lg opacity-50 group-hover:opacity-100 group-hover:text-white">📍</span><div><span class="font-bold text-white block">${shortName}</span><span class="text-xs text-slate-400 group-hover:text-blue-200">${fullName}</span></div>`;
                         li.onclick = () => {
                             mapInstance.flyTo([parseFloat(item.lat), parseFloat(item.lon)], 16, { duration: 1.5 });
-                            searchBox.value = shortName;
-                            selectedSearchPlaceName = shortName; 
-                            suggBox.classList.add('hidden');
+                            searchBox.value = shortName; selectedSearchPlaceName = shortName; suggBox.classList.add('hidden');
                         };
                         suggBox.appendChild(li);
                     });
@@ -352,8 +334,7 @@
         }
 
         function calculateDistance(lat1, lon1, lat2, lon2) {
-            const R = 6371e3;
-            const φ1 = lat1 * Math.PI / 180, φ2 = lat2 * Math.PI / 180;
+            const R = 6371e3; const φ1 = lat1 * Math.PI / 180, φ2 = lat2 * Math.PI / 180;
             const Δφ = (lat2 - lat1) * Math.PI / 180, Δλ = (lon2 - lon1) * Math.PI / 180;
             const a = Math.sin(Δφ/2) * Math.sin(Δφ/2) + Math.cos(φ1) * Math.cos(φ2) * Math.sin(Δλ/2) * Math.sin(Δλ/2);
             return R * (2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a))); 
@@ -363,77 +344,48 @@
             const pickupCoordsStr = document.getElementById('pickupCoords').value;
             const dropCoordsStr = document.getElementById('dropCoords').value;
             const dropName = document.getElementById('dropName').value;
-
             if (!pickupCoordsStr || !dropCoordsStr) return alert("Please map both your Pickup and Destination locations first!");
 
             const [pLat, pLng] = pickupCoordsStr.split(',').map(Number);
             const [dLat, dLng] = dropCoordsStr.split(',').map(Number);
-
-            const resultsDiv = document.getElementById('matchResults');
-            const btn = document.getElementById('searchBtn');
-            btn.innerHTML = "📡 Scanning Network...";
-            resultsDiv.innerHTML = '';
+            const resultsDiv = document.getElementById('matchResults'); const btn = document.getElementById('searchBtn');
+            btn.innerHTML = "📡 Scanning Network..."; resultsDiv.innerHTML = '';
 
             const { data: drivers, error } = await supabaseClient.from('driver_live_routes').select('*').eq('status', 'online');
-
             if (error || !drivers || drivers.length === 0) {
                 btn.innerHTML = "📡 Scan Route Network";
                 resultsDiv.innerHTML = '<div class="bg-rose-500/10 border border-rose-500/20 p-4 rounded-xl text-rose-400 text-center font-bold">No drivers online right now.</div>';
                 return;
             }
             
-            let exactMatchCount = 0;
-            let suggestionHTML = '';
-
+            let exactMatchCount = 0; let suggestionHTML = '';
             for (let driver of drivers) {
                 const pickupDistMeters = calculateDistance(pLat, pLng, driver.start_lat, driver.start_lng);
                 const dropDistMeters = calculateDistance(dLat, dLng, driver.drop_lat, driver.drop_lng);
 
                 if (pickupDistMeters <= 250 && dropDistMeters <= 250) { 
                     exactMatchCount++;
-                    const html = `
+                    resultsDiv.insertAdjacentHTML('beforeend', `
                         <div class="bg-slate-900 border-2 border-emerald-500/50 rounded-2xl p-4 shadow-lg shadow-emerald-500/10">
                             <div class="flex justify-between items-start mb-3">
-                                <div>
-                                    <h4 class="font-bold text-white text-base">Driver: ${driver.driver_name}</h4>
-                                    <p class="text-xs text-slate-400">🚗 ${driver.vehicle_no}</p>
-                                    <p class="text-[11px] text-emerald-400 font-bold mt-1">✅ Exact Match (At your location)</p>
-                                </div>
+                                <div><h4 class="font-bold text-white text-base">Driver: ${driver.driver_name}</h4><p class="text-xs text-slate-400">🚗 ${driver.vehicle_no}</p><p class="text-[11px] text-emerald-400 font-bold mt-1">✅ Exact Match (At your location)</p></div>
                                 <span class="text-xl font-extrabold text-emerald-400">₹${driver.fare}</span>
                             </div>
-                            <button onclick="requestRide('${driver.driver_id}', ${pLat}, ${pLng}, ${dLat}, ${dLng}, '${dropName}')" class="w-full bg-emerald-600 hover:bg-emerald-500 text-white font-bold py-3 rounded-xl text-sm transition shadow-md">
-                                Confirm & Request Ride
-                            </button>
+                            <button onclick="requestRide('${driver.driver_id}', ${pLat}, ${pLng}, ${dLat}, ${dLng}, '${dropName}')" class="w-full bg-emerald-600 hover:bg-emerald-500 text-white font-bold py-3 rounded-xl text-sm transition shadow-md">Confirm & Request Ride</button>
                         </div>
-                    `;
-                    resultsDiv.insertAdjacentHTML('beforeend', html);
-                }
-                else if (dropDistMeters <= 250 && pickupDistMeters > 250 && pickupDistMeters <= 1500) {
-                    let walkDiscount = Math.floor(pickupDistMeters / 100) * 5; 
-                    if (walkDiscount > driver.fare * 0.5) walkDiscount = Math.floor(driver.fare * 0.3);
-                    let discountedFare = driver.fare - walkDiscount;
+                    `);
+                } else if (dropDistMeters <= 250 && pickupDistMeters > 250 && pickupDistMeters <= 1500) {
                     suggestionHTML += `
                         <div class="bg-slate-900 border border-amber-500/50 rounded-2xl p-5 shadow-lg shadow-amber-500/10 mb-4">
-                            <div class="flex items-center justify-between mb-3">
-                                <h4 class="font-black text-amber-400 text-sm flex items-center uppercase tracking-wide">
-                                    <span class="animate-pulse mr-2">⚠️</span> Smart Interceptor
-                                </h4>
-                                <span class="bg-amber-500/20 text-amber-400 text-[10px] font-bold px-2 py-1 rounded">WALK & SAVE</span>
-                            </div>
-                            <p class="text-xs text-slate-300 mb-3 leading-relaxed">
-                                Driver <b class="text-white">${driver.driver_name}</b> is heading exactly to your destination, but their route starts <b>${Math.round(pickupDistMeters)}m</b> away.
-                            </p>
-                            <button onclick="autoSetPickup(${driver.start_lat}, ${driver.start_lng})" class="w-full bg-amber-600 hover:bg-amber-500 text-white font-bold py-3 rounded-xl text-sm transition shadow-md">
-                                📍 Snap Pin & Book
-                            </button>
+                            <div class="flex items-center justify-between mb-3"><h4 class="font-black text-amber-400 text-sm flex items-center uppercase tracking-wide"><span class="animate-pulse mr-2">⚠️</span> Smart Interceptor</h4><span class="bg-amber-500/20 text-amber-400 text-[10px] font-bold px-2 py-1 rounded">WALK & SAVE</span></div>
+                            <p class="text-xs text-slate-300 mb-3 leading-relaxed">Driver <b class="text-white">${driver.driver_name}</b> is heading exactly to your destination, but starts <b>${Math.round(pickupDistMeters)}m</b> away.</p>
+                            <button onclick="autoSetPickup(${driver.start_lat}, ${driver.start_lng})" class="w-full bg-amber-600 hover:bg-amber-500 text-white font-bold py-3 rounded-xl text-sm transition shadow-md">📍 Snap Pin & Book</button>
                         </div>
                     `;
                 }
             }
-
             btn.innerHTML = "📡 Scan Route Network";
             if (exactMatchCount === 0 && suggestionHTML !== '') {
-                setTimeout(() => alert("🚨 Out of Range Alert: Your pickup is outside the 200m radius! Check Smart Suggestions to walk and save money!"), 300);
                 resultsDiv.innerHTML = `<div class="bg-rose-500/10 border border-rose-500/30 p-4 rounded-xl text-rose-400 text-center text-sm font-bold mb-4 shadow-lg">📡 No exact pickups within 200m. See suggestions below.</div>` + suggestionHTML;
             } else if (exactMatchCount === 0 && suggestionHTML === '') {
                 resultsDiv.innerHTML = '<div class="bg-slate-800 border border-slate-700 p-4 rounded-xl text-slate-400 text-center font-bold text-sm">No drivers found heading to your exact destination right now.</div>';
@@ -446,86 +398,75 @@
             alert("✨ Pin Snapped successfully! Re-scanning network...");
             setTimeout(scanSmartMatchedDrivers, 500);
         }
-        // ==========================================
-        // 📡 FIXED LIVE TRACKING & RIDE REQUEST LOGIC
-        // ==========================================
+                </script>
+        <!-- JAVASCRIPT LOGIC PART 2B -->
+    <script>
+        function generateSecretCode() {
+            const letters = Math.random().toString(36).substring(2, 4).toUpperCase();
+            const numbers = Math.floor(1000 + Math.random() * 9000);
+            return `${letters}-${numbers}`;
+        }
+
+        function displayQRCode(code) {
+            const qrBox = document.getElementById("qrcodeBox");
+            if(!qrBox) return;
+            qrBox.innerHTML = ""; 
+            document.getElementById('bookingCodeText').textContent = code;
+            new QRCode(qrBox, {
+                text: code, width: 140, height: 140,
+                colorDark : "#0f172a", colorLight : "#ffffff",
+                correctLevel : QRCode.CorrectLevel.H
+            });
+        }
 
         async function requestRide(driverId, passLat, passLng, dropLat, dropLng, dropName) {
             if(!passengerProfile) { alert("Please login again!"); return; }
+            const secretCode = generateSecretCode(); 
 
             const reqData = {
-                driver_id: driverId,
-                passenger_id: passengerProfile.id,
-                passenger_name: passengerProfile.full_name,
-                passenger_phone: passengerProfile.phone || "",
-                pickup_lat: passLat,
-                pickup_lng: passLng,
-                drop_lat: dropLat,
-                drop_lng: dropLng,
-                destination: dropName,
-                status: 'pending'
+                driver_id: driverId, passenger_id: passengerProfile.id, passenger_name: passengerProfile.full_name,
+                passenger_phone: passengerProfile.phone || "", pickup_lat: passLat, pickup_lng: passLng,
+                drop_lat: dropLat, drop_lng: dropLng, destination: dropName, status: 'pending',
+                booking_code: secretCode, seats_booked: 1
             };
 
             try {
                 const { data, error } = await supabaseClient.from('ride_requests').insert([reqData]).select().single();
                 if(error) throw error;
-                
-                activeRideId = data.id;
-                switchToTrackingUI();
-                startTracking();
-
+                activeRideId = data.id; switchToTrackingUI(); startTracking();
             } catch(e) { alert("Booking Failed: " + e.message); }
         }
 
         async function checkExistingRide() {
             if(!passengerProfile) return;
             try {
-                // FIXED: Removed problematic join to ensure stable sync
                 const { data } = await supabaseClient.from('ride_requests')
-                    .select('*') 
-                    .eq('passenger_id', passengerProfile.id)
+                    .select('*').eq('passenger_id', passengerProfile.id)
                     .in('status', ['pending', 'accepted', 'arrived', 'started'])
-                    .order('created_at', { ascending: false })
-                    .limit(1).maybeSingle();
+                    .order('created_at', { ascending: false }).limit(1).maybeSingle();
 
-                if (data) {
-                    activeRideId = data.id;
-                    switchToTrackingUI();
-                    updateTrackingData(data);
-                    startTracking();
-                }
+                if (data) { activeRideId = data.id; switchToTrackingUI(); updateTrackingData(data); startTracking(); }
             } catch (err) { console.error(err); }
         }
 
         function startTracking() {
             if (trackingInterval) clearInterval(trackingInterval);
-            
             trackingInterval = setInterval(async () => {
                 if(!activeRideId) return;
-                
-                // FIXED: Removed problematic join to ensure stable sync
-                const { data, error } = await supabaseClient.from('ride_requests')
-                    .select('*')
-                    .eq('id', activeRideId)
-                    .single();
-                    
+                const { data, error } = await supabaseClient.from('ride_requests').select('*').eq('id', activeRideId).single();
                 if(data && !error) updateTrackingData(data);
-            }, 2000); // 2 seconds for faster updates
+            }, 2000); 
         }
 
         function updateTrackingData(rideData) {
-            const status = rideData.status;
-            const mainText = document.getElementById('mainStatusText');
-            const subText = document.getElementById('subStatusText');
-            const icon = document.getElementById('statusIcon');
-            const driverCard = document.getElementById('driverInfoCard');
+            const status = rideData.status; const mainText = document.getElementById('mainStatusText');
+            const subText = document.getElementById('subStatusText'); const icon = document.getElementById('statusIcon');
+            const driverCard = document.getElementById('driverInfoCard'); const qrContainer = document.getElementById('qrCodeContainer');
             
             if (status !== 'pending' && status !== 'cancelled') {
                 driverCard.classList.remove('hidden');
-                // Default fallback if foreign key fails
                 document.getElementById('driverNameTxt').textContent = 'Pilot Assigned';
                 document.getElementById('driverPhoneTxt').textContent = 'Tracking Active';
-                
                 if(rideData.driver_profiles) {
                     document.getElementById('driverNameTxt').textContent = rideData.driver_profiles.full_name || 'Pilot Assigned';
                     document.getElementById('driverPhoneTxt').textContent = rideData.driver_profiles.phone || 'Number unavailable';
@@ -533,46 +474,29 @@
                 }
             }
 
-            // Sync text with steps
+            const activeCode = rideData.booking_code || "XR-0000";
+            if (status === 'accepted' || status === 'arrived') {
+                qrContainer.classList.remove('hidden'); displayQRCode(activeCode);
+            } else { qrContainer.classList.add('hidden'); }
+
             if (status === 'pending') {
-                mainText.textContent = "Sending Request...";
-                subText.textContent = "Waiting for pilot to confirm.";
-                icon.textContent = "📡";
-                document.getElementById('cancelBtn').classList.remove('hidden');
-                setStepActive(1);
-            } 
-            else if (status === 'accepted') {
-                mainText.textContent = "Driver is on the way! 🚖";
-                subText.textContent = "Your driver has accepted and is heading to you.";
-                icon.textContent = "🚖";
+                mainText.textContent = "Sending Request..."; subText.textContent = "Waiting for pilot to confirm."; icon.textContent = "📡";
+                document.getElementById('cancelBtn').classList.remove('hidden'); setStepActive(1);
+            } else if (status === 'accepted') {
+                mainText.textContent = "Driver is on the way! 🚖"; subText.textContent = "Your driver has accepted. Show your QR to board."; icon.textContent = "🚖";
                 document.getElementById('loadingPulse').classList.replace('border-blue-500/50', 'border-emerald-500/50');
                 document.getElementById('loadingPulse').classList.replace('bg-blue-500/20', 'bg-emerald-500/20');
-                document.getElementById('cancelBtn').classList.remove('hidden');
-                setStepActive(1); 
-            }
-            else if (status === 'arrived') {
-                mainText.textContent = "Driver has Arrived! 📍";
-                subText.textContent = "Please meet your driver at the pickup point.";
-                icon.textContent = "📍";
-                document.getElementById('cancelBtn').classList.add('hidden'); 
-                setStepActive(2);
-            }
-            else if (status === 'started') {
-                mainText.textContent = "Ride in Progress 🛣️";
-                subText.textContent = "You are on your way to the destination.";
-                icon.textContent = "🏁";
-                document.getElementById('cancelBtn').classList.add('hidden');
-                setStepActive(3);
-            }
-            else if (status === 'completed') {
-                mainText.textContent = "Ride Completed! ✅";
-                subText.textContent = "Thank you for riding with Meriride.";
-                icon.textContent = "🎉";
+                document.getElementById('cancelBtn').classList.remove('hidden'); setStepActive(1); 
+            } else if (status === 'arrived') {
+                mainText.textContent = "Driver has Arrived! 📍"; subText.textContent = "Please meet your driver and show the QR code."; icon.textContent = "📍";
+                document.getElementById('cancelBtn').classList.add('hidden'); setStepActive(2);
+            } else if (status === 'started') {
+                mainText.textContent = "Ride in Progress 🛣️"; subText.textContent = "You are on your way to the destination."; icon.textContent = "🏁";
+                document.getElementById('cancelBtn').classList.add('hidden'); setStepActive(3);
+            } else if (status === 'completed') {
+                mainText.textContent = "Ride Completed! ✅"; subText.textContent = "Thank you for riding with Meriride."; icon.textContent = "🎉";
                 clearInterval(trackingInterval);
-                setTimeout(() => {
-                    alert("Trip Complete! Redirecting back to home.");
-                    window.location.reload();
-                }, 3000);
+                setTimeout(() => { alert("Trip Complete! Redirecting back to home."); window.location.reload(); }, 3000);
             }
         }
 
@@ -594,8 +518,7 @@
             if(confirm("Are you sure you want to cancel this ride?")) {
                 try {
                     await supabaseClient.from('ride_requests').update({ status: 'cancelled' }).eq('id', activeRideId);
-                    clearInterval(trackingInterval);
-                    window.location.reload();
+                    clearInterval(trackingInterval); window.location.reload();
                 } catch(e) { alert("Error cancelling ride."); }
             }
         }
@@ -609,3 +532,5 @@
     </script>
 </body>
 </html>
+
+    
